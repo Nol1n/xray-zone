@@ -3,6 +3,7 @@
 #include "xr_ioconsole.h"
 #include "xr_input.h"
 #include "../xrCore/profiler.h"
+#include "zone_profiler.h"
 
 #pragma warning(disable:4995)
 // mmsystem.h
@@ -407,6 +408,8 @@ void CRenderDevice::on_idle()
 		Sleep(100);
 		return;
 	}
+
+	zone_profiler::Scope profileFrame(zone_profiler::Zone::Frame);
 
 	PROF_FRAME("X-RAY Primary thread");
 	PROF_EVENT();

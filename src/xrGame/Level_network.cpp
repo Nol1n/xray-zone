@@ -13,6 +13,7 @@
 #include "stalker_animation_data_storage.h"
 #include "client_spawn_manager.h"
 #include "seniority_hierarchy_holder.h"
+#include "../xrEngine/zone_profiler.h"
 #include "UIGameCustom.h"
 #include "string_table.h"
 #include "file_transfer.h"
@@ -321,6 +322,7 @@ void CLevel::Send(NET_Packet& P, u32 dwFlags, u32 dwTimeout)
 
 void CLevel::net_Update()
 {
+	zone_profiler::Scope profileNetworkTick(zone_profiler::Zone::NetworkTick);
 	if (game_configured)
 	{
 		// If we have enought bandwidth - replicate client data on to server

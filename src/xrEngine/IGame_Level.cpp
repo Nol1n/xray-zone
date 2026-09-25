@@ -14,6 +14,7 @@
 #include "shader_bus.h"
 
 #include "../xrCore/profiler.h"
+#include "zone_profiler.h"
 
 //#include "securom_api.h"
 
@@ -191,12 +192,16 @@ void IGame_Level::OnRender()
 void IGame_Level::OnFrame()
 {
 	PROF_EVENT("IGame_Level::OnFrame()");
+	zone_profiler::Scope profileLevelFrame(zone_profiler::Zone::LevelFrame);
 	// Log ("- level:on-frame: ",u32(Device.dwFrame));
 	// if (_abs(Device.fTimeDelta)<EPS_S) return;
 
 	// Update all objects
 	VERIFY(bReady);
-	Objects.Update(false);
+	{
+		zone_profiler::Scope profileObjectUpdate(zone_profiler::Zone::ObjectUpdate);
+		Objects.Update(false);
+	}
 	g_hud->OnFrame();
 
 	// Ambience

@@ -21,6 +21,7 @@
 #include "../xrEngine/x_ray.h"
 #include "restriction_space.h"
 #include "profiler.h"
+#include "../xrEngine/zone_profiler.h"
 #include "mt_config.h"
 
 using namespace ALife;
@@ -112,6 +113,7 @@ void CALifeUpdateManager::update_scheduled(bool init_ef)
 
 void CALifeUpdateManager::update()
 {
+	zone_profiler::Scope profileAlifeUpdate(zone_profiler::Zone::ALifeUpdate);
 	update_switch();
 	update_scheduled(false);
 }

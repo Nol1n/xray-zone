@@ -29,6 +29,7 @@
 #include <unicode\ucnv.h>
 #include <discord\discord.h>
 #include "../xrCore/profiler.h"
+#include "zone_profiler.h"
 
 #include "xrSash.h"
 #include "MonitorList.h"
@@ -1605,6 +1606,7 @@ void CApplication::LoadSwitch()
 void CApplication::OnFrame()
 {
 	PROF_EVENT();
+	zone_profiler::Scope profileGameFrame(zone_profiler::Zone::GameFrame);
 
 	Engine.Event.OnFrame();
 	g_SpatialSpace->update();

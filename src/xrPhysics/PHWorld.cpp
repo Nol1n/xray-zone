@@ -21,6 +21,7 @@
 #include "console_vars.h"
 #include "../xrengine/device.h"
 #include "../xrengine/defines.h"
+#include "../xrEngine/zone_profiler.h"
 #include "../xrcdb/xr_area.h"
 #include "../xrcore/fs_internal.h"
 #ifdef	DEBUG
@@ -506,6 +507,7 @@ u32 CPHWorld::CalcNumSteps(u32 dTime)
 void CPHWorld::FrameStep(dReal step)
 {
 	if (IsFreezed()) return;
+	zone_profiler::Scope profilePhysicsStep(zone_profiler::Zone::PhysicsStep);
 
 	VERIFY(_valid(step)) ;
 	step *= phTimefactor;
