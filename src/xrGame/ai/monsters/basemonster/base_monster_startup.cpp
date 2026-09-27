@@ -534,6 +534,11 @@ void CBaseMonster::load_critical_wound_bones()
 
 void CBaseMonster::fill_bones_body_parts(LPCSTR body_part, CriticalWoundType wound_type)
 {
+	#ifdef DEDICATED_SERVER
+	// Critical-wound bone groups are presentation metadata. Damage/health
+	// simulation continues, while bone-specific cosmetic reactions are omitted.
+	return;
+	#endif
 	LPCSTR body_parts_section = pSettings->r_string(cNameSect(), body_part);
 
 	IKinematics* kinematics = smart_cast<IKinematics*>(Visual());

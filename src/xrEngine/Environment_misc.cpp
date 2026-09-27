@@ -300,6 +300,15 @@ void CEnvDescriptor::load(CEnvironment& environment, CInifile& config)
 	hemi_color = config.r_fvector4(m_identifier.c_str(), "hemisphere_color");
 	sun_color = config.r_fvector3(m_identifier.c_str(), "sun_color");
 
+#ifdef DEDICATED_SERVER
+	// Dedicated simulation needs the numeric weather data, not renderer-side
+	// sun, thunderbolt, ambient-audio, or particle descriptors.
+	lens_flare_id = "";
+	tb_id = "";
+	bolt_period = 0.f;
+	bolt_duration = 0.f;
+	env_ambient = 0;
+#else
 	lens_flare_id = environment.eff_LensFlare->AppendDef(environment, environment.m_suns_config,
 	                                                     config.r_string(m_identifier.c_str(), "sun"));
 	tb_id = environment.eff_Thunderbolt->AppendDef(environment, environment.m_thunderbolt_collections_config,
@@ -310,6 +319,7 @@ void CEnvDescriptor::load(CEnvironment& environment, CInifile& config)
 	env_ambient = config.line_exist(m_identifier.c_str(), "ambient")
 		              ? environment.AppendEnvAmb(config.r_string(m_identifier.c_str(), "ambient"))
 		              : 0;
+#endif
 
 	if (config.line_exist(m_identifier.c_str(), "sun_shafts_intensity"))
 		m_fSunShaftsIntensity = config.r_float(m_identifier.c_str(), "sun_shafts_intensity");
@@ -353,11 +363,15 @@ void CEnvDescriptor::load(CEnvironment& environment, CInifile& config)
 	C_CHECK(ambient);
 	C_CHECK(hemi_color);
 	C_CHECK(sun_color);
+#ifndef DEDICATED_SERVER
 	on_device_create();
+#endif
 }
 
 void CEnvDescriptor::on_device_create()
 {
+	if (!m_pDescriptor)
+		return;
 	m_pDescriptor->OnDeviceCreate(*this);
 	/*
 	if (sky_texture_name.size())
@@ -373,6 +387,8 @@ void CEnvDescriptor::on_device_create()
 
 void CEnvDescriptor::on_device_destroy()
 {
+	if (!m_pDescriptor)
+		return;
 	m_pDescriptor->OnDeviceDestroy();
 	/*
 	sky_texture.destroy ();
@@ -391,7 +407,8 @@ CEnvDescriptorMixer::CEnvDescriptorMixer(shared_str const& identifier) :
 
 void CEnvDescriptorMixer::destroy()
 {
-	m_pDescriptorMixer->Destroy();
+	if (m_pDescriptorMixer)
+		m_pDescriptorMixer->Destroy();
 	/*
 	sky_r_textures.clear ();
 	sky_r_textures_env.clear ();
@@ -409,7 +426,8 @@ void CEnvDescriptorMixer::destroy()
 
 void CEnvDescriptorMixer::clear()
 {
-	m_pDescriptorMixer->Clear();
+	if (m_pDescriptorMixer)
+		m_pDescriptorMixer->Clear();
 	/*
 	std::pair<u32,ref_texture> zero = mk_pair(u32(0),ref_texture(0));
 	sky_r_textures.clear ();
@@ -436,7 +454,10 @@ void CEnvDescriptorMixer::lerp(CEnvironment* env, CEnvDescriptor& A, CEnvDescrip
 {
 	float modif_power = 1.f / (modifier_power + 1); // the environment itself
 	float fi = 1 - f;
-	m_pDescriptorMixer->lerp(&*A.m_pDescriptor, &*B.m_pDescriptor);
+#ifndef DEDICATED_SERVER
+	if (m_pDescriptorMixer && A.m_pDescriptor && B.m_pDescriptor)
+		m_pDescriptorMixer->lerp(&*A.m_pDescriptor, &*B.m_pDescriptor);
+#endif
 
 	weight = f;
 
@@ -859,11 +880,13 @@ void CEnvironment::load()
 	if (!CurrentEnv)
 		create_mixer();
 
+#ifndef DEDICATED_SERVER
 	m_pRender->OnLoad();
 	//tonemap = Device.Resources->_CreateTexture("$user$tonemap"); //. hack
 	if (!eff_Rain) eff_Rain = xr_new<CEffect_Rain>();
 	if (!eff_LensFlare) eff_LensFlare = xr_new<CLensFlare>();
 	if (!eff_Thunderbolt) eff_Thunderbolt = xr_new<CEffect_Thunderbolt>();
+#endif
 
 	load_weathers();
 	load_weather_effects();
@@ -902,10 +925,12 @@ void CEnvironment::unload()
 	xr_delete(eff_Thunderbolt);
 	CurrentWeather = 0;
 	CurrentWeatherName = 0;
-	CurrentEnv->clear();
+	if (CurrentEnv)
+		CurrentEnv->clear();
 	Invalidate();
 
-	m_pRender->OnUnload();
+	if (m_pRender)
+		m_pRender->OnUnload();
 	// tonemap = 0;
 }
 

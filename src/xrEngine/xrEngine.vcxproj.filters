@@ -512,6 +512,9 @@
     <ClCompile Include="x_ray.cpp">
       <Filter>General</Filter>
     </ClCompile>
+    <ClCompile Include="DedicatedServer.cpp">
+      <Filter>General</Filter>
+    </ClCompile>
     <ClCompile Include="IInputReceiver.cpp">
       <Filter>Interfaces\Input</Filter>
     </ClCompile>
@@ -534,6 +537,9 @@
       <Filter>Interfaces\Render</Filter>
     </ClCompile>
     <ClCompile Include="ICollidable.cpp">
+      <Filter>Interfaces\Collidable</Filter>
+    </ClCompile>
+    <ClCompile Include="cpu_rigid_collision_pose.cpp">
       <Filter>Interfaces\Collidable</Filter>
     </ClCompile>
     <ClCompile Include="phdebug.cpp">

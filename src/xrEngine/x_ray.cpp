@@ -30,6 +30,8 @@
 #include <discord\discord.h>
 #include "../xrCore/profiler.h"
 #include "zone_profiler.h"
+#include "DedicatedServer.h"
+#include "../xrSound/Sound.h"
 
 #include "xrSash.h"
 #include "MonitorList.h"
@@ -236,16 +238,24 @@ PROTECT_API void InitConsole()
 	////SECUROM_MARKER_SECURITY_ON(5)
 
 #ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("allocating X-Ray command console");
     {
-        Console = xr_new<CTextConsole>();
+        Console = xr_new<CConsole>();
     }
+	TraceDedicatedServerBootstrap("X-Ray command console constructed");
 #else
 	// else
 	{
 		Console = xr_new<CConsole>();
 	}
 #endif
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("initializing X-Ray command registry");
+	#endif // DEDICATED_SERVER
 	Console->Initialize();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("X-Ray command registry initialized");
+	#endif // DEDICATED_SERVER
 
 	xr_strcpy(Console->ConfigFile, "user.ltx");
 	if (strstr(Core.Params, "-ltx "))
@@ -296,7 +306,9 @@ void destroySettings()
 
 void destroyConsole()
 {
+	#ifndef DEDICATED_SERVER
 	Console->Execute("cfg_save");
+	#endif // DEDICATED_SERVER
 	Console->Destroy();
 	xr_delete(Console);
 }
@@ -309,9 +321,24 @@ void destroyEngine()
 
 void execUserScript()
 {
+#ifdef DEDICATED_SERVER
+	const bool hasExplicitConfig = strstr(Core.Params, "-ltx ") != NULL;
+	if (hasExplicitConfig)
+		TraceDedicatedServerBootstrap("loading explicit dedicated config script");
+	else
+		TraceDedicatedServerBootstrap("skipping implicit client user configuration");
+	if (hasExplicitConfig)
+	{
+		TraceDedicatedServerBootstrap("executing explicit dedicated configuration script");
+		Console->ExecuteScript(Console->ConfigFile);
+		TraceDedicatedServerBootstrap("explicit dedicated configuration script executed");
+	}
+
+#else
 	Console->Execute("default_controls");
 	Console->ExecuteScript(Console->ConfigFile);
 	Console->Execute("dump_cvar");
+#endif // DEDICATED_SERVER
 }
 
 void slowdownthread(void*)
@@ -577,13 +604,21 @@ void clearDiscordPresence()
 
 void Startup()
 {
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("startup entered");
+#endif // DEDICATED_SERVER
 #ifndef DEDICATED_SERVER
 	fill_vid_monitor_list();
-#endif
-
 	InitSound1();
 	execUserScript();
 	InitSound2();
+#else
+	CSound_manager_interface::_create_silent();
+	execUserScript();
+#endif
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("startup user script completed");
+#endif // DEDICATED_SERVER
 
 #ifndef DEDICATED_SERVER
 	{
@@ -623,7 +658,25 @@ void Startup()
 	ResetStartupMonitor();
 #endif
 
-	// ...command line for auto start
+	// Initialize APP
+	Device.Create();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("device created");
+	#endif // DEDICATED_SERVER
+
+	LALib.OnCreate();
+	pApp = xr_new<CApplication>();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("application object created");
+	#endif // DEDICATED_SERVER
+	g_pGamePersistent = (IGame_Persistent*)NEW_INSTANCE(CLSID_GAME_PERSISTANT);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("persistent game object created");
+	#endif // DEDICATED_SERVER
+	g_SpatialSpace = xr_new<ISpatial_DB>();
+	g_SpatialSpacePhysic = xr_new<ISpatial_DB>();
+
+	// Process startup commands after their event handlers and game services exist.
 	{
 		LPCSTR pStartup = strstr(Core.Params, "-start ");
 		if (pStartup) Console->Execute(pStartup + 1);
@@ -633,19 +686,13 @@ void Startup()
 		if (pStartup) Console->Execute(pStartup + 1);
 	}
 
-	// Initialize APP
-	Device.Create();
-
-	LALib.OnCreate();
-	pApp = xr_new<CApplication>();
-	g_pGamePersistent = (IGame_Persistent*)NEW_INSTANCE(CLSID_GAME_PERSISTANT);
-	g_SpatialSpace = xr_new<ISpatial_DB>();
-	g_SpatialSpacePhysic = xr_new<ISpatial_DB>();
-
+	#ifndef DEDICATED_SERVER
 	// Destroy LOGO
 	DestroyWindow(logoWindow);
 	logoWindow = NULL;
+#endif
 
+	#ifndef DEDICATED_SERVER
 	//Discord Rich Presence - Rezy
 	Init_Discord();
 
@@ -655,12 +702,22 @@ void Startup()
 		Msg("[ReShade]: Loaded compatibility addon");
 	else
 		Msg("[ReShade]: ReShade not installed or version too old - didn't load compatibility addon");
+	#endif
 
 	// Main cycle
 	Msg("* [x-ray]: Starting Main Loop");
 	Memory.mem_usage();
 
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("entering dedicated device loop");
+	Msg("* [zone-server] Running; Ctrl+C or the quit command requests a graceful shutdown.");
+	if (!DedicatedServerShutdownRequested())
+		Device.Run();
+	else
+		Msg("* [zone-server] shutdown requested before the simulation loop started");
+#else
 	Device.Run();
+#endif // DEDICATED_SERVER
 
 	// Discord
 	clearDiscordPresence();
@@ -672,34 +729,62 @@ void Startup()
 	// Destroy APP
 	xr_delete(g_SpatialSpacePhysic);
 	xr_delete(g_SpatialSpace);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("spatial databases destroyed");
+	TraceDedicatedServerBootstrap("destroying persistent game object");
+	#endif // DEDICATED_SERVER
 	DEL_INSTANCE(g_pGamePersistent);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("persistent game object destroyed");
+	#endif // DEDICATED_SERVER
 
 	xr_delete(pApp);
 	pApp = NULL;
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("application object destroyed");
+	#endif // DEDICATED_SERVER
 
 	Engine.Event.Dump();
 
 	// Destroying
 	//. destroySound();
 	destroyInput();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("input system destroyed");
+	#endif // DEDICATED_SERVER
 
 	if (!g_bBenchmark && !g_SASH.IsRunning())
 		destroySettings();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("settings destroyed");
+	#endif // DEDICATED_SERVER
 
 	LALib.OnDestroy();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("lua library destroyed");
+	#endif // DEDICATED_SERVER
 
 	if (!g_bBenchmark && !g_SASH.IsRunning())
 		destroyConsole();
 	else
 		Console->Destroy();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("console destroyed");
+	#endif // DEDICATED_SERVER
 
 	destroySound();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("sound teardown completed");
+	#endif // DEDICATED_SERVER
 
 #ifndef DEDICATED_SERVER
 	free_vid_monitor_list();
 #endif
 
 	destroyEngine();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("engine destroyed");
+	#endif // DEDICATED_SERVER
 }
 
 static INT_PTR CALLBACK logDlgProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp)
@@ -1033,6 +1118,7 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
     g_dedicated_server = true;
 #endif // DEDICATED_SERVER
 
+#ifndef DEDICATED_SERVER
 	// Title window
     logoWindow = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_STARTUP), 0, logDlgProc);
    
@@ -1071,6 +1157,7 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 	);
 	
 	UpdateWindow(logoWindow);
+#endif // DEDICATED_SERVER
 
 	// AVI
 	g_bIntroFinished = TRUE;
@@ -1093,7 +1180,19 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 	compute_build_id();
 	Core._initialize("xray", NULL, TRUE, fsgame[0] ? fsgame : NULL);
 
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("Core initialized");
+	if (!InitializeDedicatedServer(Core.Params))
+	{
+		Core._destroy();
+		return 2;
+	}
+#endif // DEDICATED_SERVER
+
 	InitSettings();
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("settings initialized");
+#endif // DEDICATED_SERVER
 	Msg(XRAY_MONOLITH_VERSION);
 
 	{
@@ -1136,12 +1235,22 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 
 		FPU::m24r();
 		InitEngine();
+#ifdef DEDICATED_SERVER
+		TraceDedicatedServerBootstrap("engine and device initialized");
+#endif // DEDICATED_SERVER
 
+#ifndef DEDICATED_SERVER
 		InitInput();
+#endif
 
 		InitConsole();
+#ifdef DEDICATED_SERVER
+		TraceDedicatedServerBootstrap("console initialized");
+#endif // DEDICATED_SERVER
 
+	#ifndef DEDICATED_SERVER
 		Engine.External.CreateRendererList();
+	#endif
 
 		LPCSTR benchName = "-batch_benchmark ";
 		if (strstr(lpCmdLine, benchName))
@@ -1187,14 +1296,22 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 			pTmp->Execute(Console->ConfigFile);
 			xr_delete(pTmp);
 		}
-#else
-        Console->Execute("renderer renderer_r1");
 #endif
 		//. InitInput ( );
 		Engine.External.Initialize();
+#ifdef DEDICATED_SERVER
+		TraceDedicatedServerBootstrap("engine external services initialized");
+#endif // DEDICATED_SERVER
+	#ifndef DEDICATED_SERVER
 		Console->Execute("stat_memory");
+	#else
+		TraceDedicatedServerBootstrap("skipping client-only pre-device stat_memory command");
+	#endif // DEDICATED_SERVER
 
 		Startup();
+#ifdef DEDICATED_SERVER
+		ShutdownDedicatedServer();
+#endif // DEDICATED_SERVER
 		Core._destroy();
 
 		// check for need to execute something external
@@ -1292,9 +1409,10 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 
 	DllMainXrCore(NULL, DLL_THREAD_ATTACH, NULL);
 
+	int engine_exit_code = 0;
 	__try
 	{
-		WinMain_impl(hInstance, hPrevInstance, lpCmdLine, nCmdShow);
+		engine_exit_code = WinMain_impl(hInstance, hPrevInstance, lpCmdLine, nCmdShow);
 	}
 	__except (stack_overflow_exception_filter(GetExceptionCode()))
 	{
@@ -1306,7 +1424,12 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 	DllMainXrCore(NULL, DLL_PROCESS_DETACH, NULL);
 	//DllMainOpenAL32(NULL, DLL_PROCESS_DETACH, NULL);
 
-	return (0);
+#ifdef DEDICATED_SERVER
+	return engine_exit_code;
+#else
+	(void)engine_exit_code;
+	return 0;
+#endif // DEDICATED_SERVER
 }
 
 LPCSTR _GetFontTexName(LPCSTR section) { return GetFontTextureName(section); }
@@ -1358,8 +1481,10 @@ CApplication::CApplication()
 	// Register us
 	Device.seqFrame.Add(this, REG_PRIORITY_HIGH + 1000);
 
+	#ifndef DEDICATED_SERVER
 	if (psDeviceFlags.test(mtSound)) Device.seqFrameMT.Add(&SoundProcessor);
 	else Device.seqFrame.Add(&SoundProcessor);
+	#endif // DEDICATED_SERVER
 
 	Console->Show();
 
@@ -1399,7 +1524,11 @@ void CApplication::OnEvent(EVENT E, u64 P1, u64 P2)
 	{
 		g_SASH.EndBenchmark();
 
+#ifdef DEDICATED_SERVER
+		RequestDedicatedServerShutdown();
+#else
 		PostQuitMessage(0);
+#endif // DEDICATED_SERVER
 
 		for (u32 i = 0; i < Levels.size(); i++)
 		{
@@ -1409,6 +1538,9 @@ void CApplication::OnEvent(EVENT E, u64 P1, u64 P2)
 	}
 	else if (E == eStart)
 	{
+	#ifdef DEDICATED_SERVER
+		TraceDedicatedServerBootstrap("game start event entered");
+	#endif // DEDICATED_SERVER
 		LPSTR op_server = LPSTR(P1);
 		LPSTR op_client = LPSTR(P2);
 		Level_Current = u32(-1);
@@ -1416,7 +1548,9 @@ void CApplication::OnEvent(EVENT E, u64 P1, u64 P2)
 		R_ASSERT(0 != g_pGamePersistent);
 
 #ifdef NO_SINGLE
+#ifndef DEDICATED_SERVER
         Console->Execute("main_menu on");
+#endif // DEDICATED_SERVER
         if ((op_server == NULL) ||
                 (!xr_strlen(op_server)) ||
                 (
@@ -1430,19 +1564,59 @@ void CApplication::OnEvent(EVENT E, u64 P1, u64 P2)
            )
 #endif // #ifdef NO_SINGLE
 		{
+			#ifdef DEDICATED_SERVER
+			TraceDedicatedServerBootstrap("game start event before main menu command");
+			#endif // DEDICATED_SERVER
+			#ifndef DEDICATED_SERVER
 			Console->Execute("main_menu off");
+			#endif // DEDICATED_SERVER
+			#ifdef DEDICATED_SERVER
+			TraceDedicatedServerBootstrap("game start event after main menu command");
+			#endif // DEDICATED_SERVER
+			if (Core.Params && strstr(Core.Params, "-zone_profile_keep_active"))
+				Device.Pause(FALSE, TRUE, TRUE, "CApplication::OnEvent zone-profile");
+			#ifdef DEDICATED_SERVER
+			TraceDedicatedServerBootstrap("game start event before console hide");
+			#endif // DEDICATED_SERVER
 			Console->Hide();
+			#ifdef DEDICATED_SERVER
+			TraceDedicatedServerBootstrap("game start event after console hide");
+			#endif // DEDICATED_SERVER
+			#ifdef DEDICATED_SERVER
+			TraceDedicatedServerBootstrap("game start event before persistent pre-start");
+			#endif // DEDICATED_SERVER
 			//! this line is commented by Dima
 			//! because I don't see any reason to reset device here
 			//! Device.Reset (false);
 			//-----------------------------------------------------------
 			g_pGamePersistent->PreStart(op_server);
+			#ifdef DEDICATED_SERVER
+			TraceDedicatedServerBootstrap("game start event after persistent pre-start");
+			#endif // DEDICATED_SERVER
 			//-----------------------------------------------------------
+			#ifdef DEDICATED_SERVER
+			TraceDedicatedServerBootstrap("game start event before level allocation");
+			#endif // DEDICATED_SERVER
 			g_pGameLevel = (IGame_Level*)NEW_INSTANCE(CLSID_GAME_LEVEL);
+			#ifdef DEDICATED_SERVER
+			TraceDedicatedServerBootstrap("game start event after level allocation");
+			#endif // DEDICATED_SERVER
 			pApp->LoadBegin();
+			#ifdef DEDICATED_SERVER
+			TraceDedicatedServerBootstrap("game start event before persistent start");
+			#endif // DEDICATED_SERVER
 			g_pGamePersistent->Start(op_server);
+			#ifdef DEDICATED_SERVER
+			TraceDedicatedServerBootstrap("game start event after persistent start");
+			#endif // DEDICATED_SERVER
 			g_pGameLevel->net_Start(op_server, op_client);
+			#ifdef DEDICATED_SERVER
+			TraceDedicatedServerBootstrap("game start event after level net start");
+			#endif // DEDICATED_SERVER
 			pApp->LoadEnd();
+			#ifdef DEDICATED_SERVER
+			TraceDedicatedServerBootstrap("game start event completed");
+			#endif // DEDICATED_SERVER
 		}
 		xr_free(op_server);
 		xr_free(op_client);
@@ -1462,8 +1636,10 @@ void CApplication::OnEvent(EVENT E, u64 P1, u64 P2)
 
 			if ((FALSE == Engine.Event.Peek("KERNEL:quit")) && (FALSE == Engine.Event.Peek("KERNEL:start")))
 			{
+				#ifndef DEDICATED_SERVER
 				Console->Execute("main_menu off");
 				Console->Execute("main_menu on");
+				#endif // DEDICATED_SERVER
 			}
 		}
 		R_ASSERT(0 != g_pGamePersistent);
@@ -1608,11 +1784,45 @@ void CApplication::OnFrame()
 	PROF_EVENT();
 	zone_profiler::Scope profileGameFrame(zone_profiler::Zone::GameFrame);
 
+	#ifdef DEDICATED_SERVER
+	static u32 dedicatedTraceFrame = 0;
+	const bool traceDedicatedFrame = dedicatedTraceFrame < 3;
+	if (traceDedicatedFrame)
+		TraceDedicatedServerBootstrap("application frame entered");
+	#endif // DEDICATED_SERVER
+
+	#ifdef DEDICATED_SERVER
+	if (traceDedicatedFrame)
+		TraceDedicatedServerBootstrap("application frame before engine events");
+	#endif // DEDICATED_SERVER
 	Engine.Event.OnFrame();
+	#ifdef DEDICATED_SERVER
+	if (traceDedicatedFrame)
+		TraceDedicatedServerBootstrap("application frame after engine events");
+	#endif // DEDICATED_SERVER
+	#ifdef DEDICATED_SERVER
+	if (traceDedicatedFrame)
+		TraceDedicatedServerBootstrap("application frame before spatial update");
+	#endif // DEDICATED_SERVER
 	g_SpatialSpace->update();
+	#ifdef DEDICATED_SERVER
+	if (traceDedicatedFrame)
+		TraceDedicatedServerBootstrap("application frame after spatial update");
+	#endif // DEDICATED_SERVER
 	g_SpatialSpacePhysic->update();
+	#ifdef DEDICATED_SERVER
+	if (traceDedicatedFrame)
+		TraceDedicatedServerBootstrap("application frame after physics spatial update");
+	#endif // DEDICATED_SERVER
 	if (g_pGameLevel)
 		g_pGameLevel->SoundEvent_Dispatch();
+	#ifdef DEDICATED_SERVER
+	if (traceDedicatedFrame)
+	{
+		TraceDedicatedServerBootstrap("application frame completed");
+		++dedicatedTraceFrame;
+	}
+	#endif // DEDICATED_SERVER
 }
 
 void CApplication::Level_Append(LPCSTR folder)
@@ -1713,7 +1923,7 @@ void CApplication::Level_Set(u32 L)
 		}
 	}
 
-	if (path[0])
+	if (path[0] && m_pRender)
 		m_pRender->setLevelLogo(path);
 
 	//SECUROM_MARKER_PERFORMANCE_OFF(9)

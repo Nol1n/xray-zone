@@ -156,38 +156,7 @@ IC void CBlend::update_play(float dt, PlayCallback _Callback)
 
 IC bool CBlend::update_time(float dt)
 {
-	if (!playing)
-		return false;
-	float quant = dt * speed;
-	timeCurrent += quant; // stop@end - time is not going
-
-	bool running_fwrd = (quant > 0);
-	float const END_EPS = SAMPLE_SPF + EPS;
-	bool at_end = running_fwrd && (timeCurrent > (timeTotal - END_EPS));
-	bool at_begin = !running_fwrd && (timeCurrent < 0.f);
-
-	if (!stop_at_end)
-	{
-		if (at_begin)
-			timeCurrent += timeTotal;
-		if (at_end)
-			timeCurrent -= (timeTotal - END_EPS);
-		VERIFY(timeCurrent>=0.f);
-		return false;
-	}
-	if (!at_end && !at_begin)
-		return false;
-
-	if (at_end)
-	{
-		timeCurrent = timeTotal - END_EPS; // stop@end - time frozen at the end
-		if (timeCurrent < 0.f) timeCurrent = 0.f;
-	}
-	else
-		timeCurrent = 0.f;
-
-	VERIFY(timeCurrent>=0.f);
-	return true;
+	return AdvanceMotionPlaybackTime(timeCurrent, timeTotal, speed, playing != FALSE, stop_at_end != FALSE, dt);
 }
 
 IC bool CBlend::update_falloff(float dt)

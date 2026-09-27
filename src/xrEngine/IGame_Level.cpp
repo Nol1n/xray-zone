@@ -29,20 +29,23 @@ IGame_Level::IGame_Level()
 	bReady = false;
 	pCurrentEntity = NULL;
 	pCurrentViewEntity = NULL;
-	Device.DumpResourcesMemoryUsage();
+	if (Device.m_pRender)
+		Device.DumpResourcesMemoryUsage();
 }
 
 //#include "resourcemanager.h"
 
 IGame_Level::~IGame_Level()
 {
-	if (strstr(Core.Params, "-nes_texture_storing"))
+	if (Device.m_pRender && strstr(Core.Params, "-nes_texture_storing"))
 		//Device.Resources->StoreNecessaryTextures();
 		Device.m_pRender->ResourcesStoreNecessaryTextures();
 	xr_delete(pLevel);
 
 	// Render-level unload
+	#ifndef DEDICATED_SERVER
 	Render->level_Unload();
+	#endif // DEDICATED_SERVER
 	xr_delete(m_pCameras);
 	// Unregister
 	Device.seqParallel.clear_not_free();
@@ -50,9 +53,11 @@ IGame_Level::~IGame_Level()
 	Device.seqFrame.Remove(this);
 	CCameraManager::ResetPP();
 	///////////////////////////////////////////
+	#ifndef DEDICATED_SERVER
 	Sound->set_geometry_occ(NULL);
 	Sound->set_handler(NULL);
 	Device.DumpResourcesMemoryUsage();
+	#endif // DEDICATED_SERVER
 
 	u32 m_base = 0, c_base = 0, m_lmaps = 0, c_lmaps = 0;
 	if (Device.m_pRender)
@@ -110,19 +115,23 @@ bool IGame_Level::Load(u32 dwNum)
 	// g_pGamePersistent->LoadTitle ("st_loading_cform");
 	g_pGamePersistent->LoadTitle();
 	ObjectSpace.Load(build_callback);
-	//Sound->set_geometry_occ ( &Static );
-	Sound->set_geometry_occ(ObjectSpace.GetStaticModel());
-	Sound->set_handler(_sound_event);
+	if (!g_dedicated_server)
+	{
+		//Sound->set_geometry_occ ( &Static );
+		Sound->set_geometry_occ(ObjectSpace.GetStaticModel());
+		Sound->set_handler(_sound_event);
+	}
 
 	pApp->LoadSwitch();
 
 
 	// HUD + Environment
-	if (!g_hud)
+	if (!g_dedicated_server && !g_hud)
 		g_hud = (CCustomHUD*)NEW_INSTANCE(CLSID_HUDMANAGER);
 
 	// Render-level Load
-	Render->level_Load(LL_Stream);
+	if (!g_dedicated_server)
+		Render->level_Load(LL_Stream);
 	// tscreate.FrameEnd ();
 	// Msg ("* S-CREATE: %f ms, %d times",tscreate.result,tscreate.count);
 
@@ -202,7 +211,9 @@ void IGame_Level::OnFrame()
 		zone_profiler::Scope profileObjectUpdate(zone_profiler::Zone::ObjectUpdate);
 		Objects.Update(false);
 	}
-	g_hud->OnFrame();
+	zone_profiler::setGauge(zone_profiler::Gauge::LevelObjects, Objects.o_count());
+	if (g_hud)
+		g_hud->OnFrame();
 
 	// Ambience
 	if (Sounds_Random.size() && (Device.dwTimeGlobal > Sounds_Random_dwNextTime))

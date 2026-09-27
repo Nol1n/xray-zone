@@ -977,6 +977,8 @@
     <ClCompile Include="Device_create.cpp" />
     <ClCompile Include="Device_destroy.cpp" />
     <ClCompile Include="Device_Initialize.cpp" />
+    <ClCompile Include="DedicatedRenderFactory.cpp" />
+    <ClCompile Include="DedicatedServer.cpp" />
     <ClCompile Include="Device_Misc.cpp" />
     <ClCompile Include="Device_overdraw.cpp" />
     <ClCompile Include="Device_wndproc.cpp" />
@@ -999,6 +1001,7 @@
     <ClCompile Include="GameMtlLib.cpp" />
     <ClCompile Include="GameMtlLib_Engine.cpp" />
     <ClCompile Include="ICollidable.cpp" />
+    <ClCompile Include="cpu_rigid_collision_pose.cpp" />
     <ClCompile Include="IGame_Level.cpp" />
     <ClCompile Include="IGame_Level_check_textures.cpp" />
     <ClCompile Include="IGame_ObjectPool.cpp" />
@@ -1155,73 +1158,77 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)|$(Platform)'=='Verified|x64'">
-    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R4\xrRender_R4.vcxproj">
+    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R4\xrRender_R4.vcxproj" Condition="'$(XrDedicatedServer)' != 'true'">
       <Project>{AC9B12ED-A2D7-4337-A981-5BD8430E96D8}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)|$(Platform)'=='VerifiedDX11|x64'">
-    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R4\xrRender_R4.vcxproj">
+    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R4\xrRender_R4.vcxproj" Condition="'$(XrDedicatedServer)' != 'true'">
       <Project>{AC9B12ED-A2D7-4337-A981-5BD8430E96D8}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)|$(Platform)'=='VerifiedDX9|x64'">
-    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R2\xrRender_R2.vcxproj">
+    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R2\xrRender_R2.vcxproj" Condition="'$(XrDedicatedServer)' != 'true'">
       <Project>{963BA4E5-499A-454D-B002-1D5ECE0527A6}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)|$(Platform)'=='ProfiledDX11|x64'">
-    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R4\xrRender_R4.vcxproj">
+    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R4\xrRender_R4.vcxproj" Condition="'$(XrDedicatedServer)' != 'true'">
       <Project>{AC9B12ED-A2D7-4337-A981-5BD8430E96D8}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseR4|x64'">
-    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R4\xrRender_R4.vcxproj">
+    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R4\xrRender_R4.vcxproj" Condition="'$(XrDedicatedServer)' != 'true'">
       <Project>{AC9B12ED-A2D7-4337-A981-5BD8430E96D8}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseR4-AVX|x64'">
-    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R4\xrRender_R4.vcxproj">
+    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R4\xrRender_R4.vcxproj" Condition="'$(XrDedicatedServer)' != 'true'">
       <Project>{AC9B12ED-A2D7-4337-A981-5BD8430E96D8}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseR3|x64'">
-    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R3\xrRender_R3.vcxproj">
+    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R3\xrRender_R3.vcxproj" Condition="'$(XrDedicatedServer)' != 'true'">
       <Project>{3F383D3C-FCD8-4170-990B-EB4833F09248}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseR3-AVX|x64'">
-    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R3\xrRender_R3.vcxproj">
+    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R3\xrRender_R3.vcxproj" Condition="'$(XrDedicatedServer)' != 'true'">
       <Project>{3F383D3C-FCD8-4170-990B-EB4833F09248}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseR2|x64'">
-    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R2\xrRender_R2.vcxproj">
+    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R2\xrRender_R2.vcxproj" Condition="'$(XrDedicatedServer)' != 'true'">
       <Project>{963BA4E5-499A-454D-B002-1D5ECE0527A6}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseR2-AVX|x64'">
-    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R2\xrRender_R2.vcxproj">
+    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R2\xrRender_R2.vcxproj" Condition="'$(XrDedicatedServer)' != 'true'">
       <Project>{963BA4E5-499A-454D-B002-1D5ECE0527A6}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseR1|x64'">
-    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R1\xrRender_R1.vcxproj">
+    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R1\xrRender_R1.vcxproj" Condition="'$(XrDedicatedServer)' != 'true'">
       <Project>{57A498C9-A741-4DDF-8EFC-BFB9EB6B00E2}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)|$(Platform)'=='VerifiedDX8|x64'">
-    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R1\xrRender_R1.vcxproj">
+    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R1\xrRender_R1.vcxproj" Condition="'$(XrDedicatedServer)' != 'true'">
       <Project>{57A498C9-A741-4DDF-8EFC-BFB9EB6B00E2}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseR1-AVX|x64'">
-    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R1\xrRender_R1.vcxproj">
+    <ProjectReference Include="$(SolutionDir)Layers\xrRenderPC_R1\xrRender_R1.vcxproj" Condition="'$(XrDedicatedServer)' != 'true'">
       <Project>{57A498C9-A741-4DDF-8EFC-BFB9EB6B00E2}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+  <PropertyGroup Condition="'$(XrDedicatedServer)' == 'true'">
+    <TargetName>AnomalyDedicated</TargetName>
+    <TargetPath>$(OutDir)AnomalyDedicated.exe</TargetPath>
+  </PropertyGroup>
   <ProjectExtensions>
     <VisualStudio>
       <UserProperties DevPartner_IsInstrumented="1" />

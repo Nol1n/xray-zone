@@ -76,10 +76,10 @@ BOOL CTeamBaseZone::net_Spawn(CSE_Abstract* DC)
 
 	m_Team = l_tpALifeScriptZone->m_team;
 
+	l_pShape->ComputeBounds();
 	BOOL bOk = inherited::net_Spawn(DC);
 	if (bOk)
 	{
-		l_pShape->ComputeBounds();
 		Fvector P;
 		XFORM().transform_tiny(P, CFORM()->getSphere().P);
 		setEnabled(TRUE);

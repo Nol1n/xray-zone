@@ -13,6 +13,8 @@
 class ENGINE_API IRender_Sector;
 class ENGINE_API IRender_ObjectSpecific;
 class ENGINE_API CCustomHUD;
+class IKinematics;
+class IObjectCollisionPose;
 class NET_Packet;
 class CSE_Abstract;
 
@@ -66,6 +68,8 @@ private:
 	shared_str NameObject;
 	shared_str NameSection;
 	shared_str NameVisual;
+	IObjectCollisionPose* m_collision_pose;
+	IObjectCollisionPose* m_owned_collision_pose;
 protected:
 	// Parentness
 	CObject* Parent;
@@ -138,6 +142,10 @@ public:
 
 	// Accessors and converters
 	ICF IRenderVisual* Visual() const { return renderable.visual; }
+	IKinematics* GetKinematics() const;
+	IObjectCollisionPose* CollisionPose() const;
+	// The explicitly supplied provider is non-owning and takes precedence over a visual adapter.
+	void SetCollisionPoseProvider(IObjectCollisionPose* pose);
 	ICF ICollisionForm* CFORM() const { return collidable.model; }
 	virtual CObject* dcast_CObject() { return this; }
 	virtual IRenderable* dcast_Renderable() { return this; }

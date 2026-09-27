@@ -282,8 +282,13 @@ bool motions_container::has(shared_str key)
 
 motions_value* motions_container::dock(shared_str key, IReader* data, vecBones* bones)
 {
+	return dock(key, key, data, bones);
+}
+
+motions_value* motions_container::dock(shared_str cache_key, shared_str motion_name, IReader* data, vecBones* bones)
+{
 	motions_value* result = 0;
-	SharedMotionsMapIt I = container.find(key);
+	SharedMotionsMapIt I = container.find(cache_key);
 	if (I != container.end()) result = I->second;
 	if (0 == result)
 	{
@@ -291,9 +296,9 @@ motions_value* motions_container::dock(shared_str key, IReader* data, vecBones* 
 		VERIFY(data);
 		result = xr_new<motions_value>();
 		result->m_dwReference = 0;
-		BOOL bres = result->load(key.c_str(), data, bones);
+		BOOL bres = result->load(motion_name.c_str(), data, bones);
 		if (bres)
-			container.insert(mk_pair(key, result));
+			container.insert(mk_pair(cache_key, result));
 		else
 			xr_delete(result);
 	}
@@ -349,6 +354,37 @@ void motions_container::dump()
 	Log("--- motion container --- end.");
 }
 
+shared_str make_motion_cache_key(shared_str motion_name, const vecBones& bones)
+{
+	VERIFY(motion_name);
+	xr_string normalized_name = motion_name.c_str();
+	xr_strlwr(normalized_name);
+	for (xr_string::iterator it = normalized_name.begin(); it != normalized_name.end(); ++it)
+		if (*it == '/')
+			*it = '\\';
+
+	xr_string key;
+	char length[32];
+	xr_sprintf(length, sizeof(length), "%u:", static_cast<u32>(normalized_name.size()));
+	key.append(length);
+	key.append(normalized_name);
+	key += '|';
+	xr_sprintf(length, sizeof(length), "%u|", static_cast<u32>(bones.size()));
+	key.append(length);
+
+	for (const CBoneData* bone : bones)
+	{
+		VERIFY(bone);
+		xr_string normalized_bone_name = bone->name.c_str();
+		xr_strlwr(normalized_bone_name);
+		xr_sprintf(length, sizeof(length), "%u:", static_cast<u32>(normalized_bone_name.size()));
+		key.append(length);
+		key.append(normalized_bone_name);
+	}
+
+	return shared_str(key.c_str());
+}
+
 //////////////////////////////////////////////////////////////////////////
 // High level control
 void CMotionDef::Load(IReader* MP, u32 fl, u16 version)
@@ -383,12 +419,139 @@ bool CMotionDef::StopAtEnd()
 
 bool shared_motions::create(shared_str key, IReader* data, vecBones* bones)
 {
-	motions_value* v = g_pMotionsContainer->dock(key, data, bones);
+	if (!g_pMotionsContainer)
+	{
+		destroy();
+		p_ = nullptr;
+		return false;
+	}
+	return create(key, data, bones, *g_pMotionsContainer);
+}
+
+bool shared_motions::create(shared_str key, IReader* data, vecBones* bones, motions_container& cache)
+{
+	return create(key, key, data, bones, cache);
+}
+
+bool shared_motions::create(shared_str cache_key, shared_str motion_name, IReader* data, vecBones* bones, motions_container& cache)
+{
+	motions_value* v = cache.dock(cache_key, motion_name, data, bones);
 	if (0 != v)
 		v->m_dwReference++;
 	destroy();
 	p_ = v;
 	return (0 != v);
+}
+
+bool shared_motions::create_from_vfs(shared_str motion_name, vecBones* bones, motions_container& cache)
+{
+	if (!motion_name || !bones || bones->empty())
+	{
+		destroy();
+		p_ = nullptr;
+		return false;
+	}
+
+	string_path normalized_name;
+	xr_strcpy(normalized_name, sizeof(normalized_name), motion_name.c_str());
+	if (!strext(normalized_name))
+		xr_strcat(normalized_name, sizeof(normalized_name), ".omf");
+	xr_strlwr(normalized_name);
+	for (char* it = normalized_name; *it; ++it)
+		if (*it == '/')
+			*it = '\\';
+
+	const shared_str canonical_name(normalized_name);
+	const shared_str cache_key = make_motion_cache_key(canonical_name, *bones);
+	if (cache.has(cache_key))
+		return create(cache_key, canonical_name, nullptr, bones, cache);
+
+	string_path resolved_path;
+	if (!FS.exist(resolved_path, "$level$", canonical_name.c_str()) &&
+		!FS.exist(resolved_path, "$game_meshes$", canonical_name.c_str()))
+	{
+		destroy();
+		p_ = nullptr;
+		return false;
+	}
+
+	IReader* data = FS.r_open(resolved_path);
+	if (!data)
+	{
+		destroy();
+		p_ = nullptr;
+		return false;
+	}
+
+	const bool result = create(cache_key, canonical_name, data, bones, cache);
+	FS.r_close(data);
+	return result;
+}
+
+const CMotion* shared_motions::bone_motion(const shared_str& bone_name, u16 motion_index) const
+{
+	if (!p_)
+		return nullptr;
+	const auto it = p_->m_motions.find(bone_name);
+	if (it == p_->m_motions.end() || motion_index >= it->second.size())
+		return nullptr;
+	return &it->second[motion_index];
+}
+
+bool ResolveMotionPlaybackTrack(const shared_motions* slots, u16 slot_count, const shared_str& bone_name,
+	const SMotionPlaybackState& state, SMotionBlendTrack& track)
+{
+	if (!slots || !state.id.valid() || state.weight <= EPS_S || state.id.slot >= slot_count ||
+		state.channel >= MAX_CHANNELS)
+		return false;
+	const CMotion* motion = slots[state.id.slot].bone_motion(bone_name, state.id.idx);
+	if (!motion)
+		return false;
+	track.motion = motion;
+	track.time_seconds = state.time_current;
+	track.weight = state.weight;
+	return true;
+}
+
+bool EvaluateMotionBoneFromStates(CKey& result, const shared_motions* slots, u16 slot_count,
+	const shared_str& bone_name, const SMotionPlaybackState* states, int state_count,
+	const SMotionChannelDef* channel_definitions, int channel_count)
+{
+	if (channel_count <= 0 || channel_count > static_cast<int>(MAX_CHANNELS) || state_count < 0 ||
+		(state_count > 0 && !states) || !channel_definitions)
+		return false;
+
+	SMotionBlendTrack tracks[MAX_CHANNELS][MAX_BLENDED];
+	SMotionChannelTrackSet channels[MAX_CHANNELS];
+	for (int channel = 0; channel < channel_count; ++channel)
+	{
+		channels[channel].tracks = tracks[channel];
+		channels[channel].count = 0;
+		channels[channel].definition = channel_definitions[channel];
+	}
+
+	for (int state_index = 0; state_index < state_count; ++state_index)
+	{
+		const SMotionPlaybackState& state = states[state_index];
+		if (state.weight <= EPS_S)
+			continue;
+		if (state.channel >= channel_count)
+			return false;
+
+		SMotionBlendTrack track;
+		if (!ResolveMotionPlaybackTrack(slots, slot_count, bone_name, state, track))
+			return false;
+
+		SMotionChannelTrackSet& channel = channels[state.channel];
+		if (channel.count >= static_cast<int>(MAX_BLENDED))
+			return false;
+		tracks[state.channel][channel.count++] = track;
+	}
+
+	CKey evaluated;
+	EvaluateMotionBone(evaluated, channels, channel_count);
+	result = evaluated;
+	return true;
 }
 
 bool shared_motions::create(shared_motions const& rhs)

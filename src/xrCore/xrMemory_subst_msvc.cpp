@@ -3,8 +3,47 @@
 
 #include "xrMemory_align.h"
 #include "xrMemory_pure.h"
+#include <atomic>
 
 #ifndef __BORLANDC__
+
+bool xrAllocationTrackingEnabled = false;
+namespace
+{
+std::atomic<u64> allocationCalls{0};
+std::atomic<u64> reallocationCalls{0};
+std::atomic<u64> freeCalls{0};
+std::atomic<u64> allocationRequestedBytes{0};
+std::atomic<u64> reallocationRequestedBytes{0};
+
+bool exactArgument(const char* arguments, const char* flag)
+{
+	if (!arguments)
+		return false;
+	const size_t length = strlen(flag);
+	for (const char* found = strstr(arguments, flag); found; found = strstr(found + length, flag))
+	{
+		if ((found == arguments || found[-1] == ' ' || found[-1] == '\t') &&
+			(found[length] == 0 || found[length] == ' ' || found[length] == '\t'))
+			return true;
+	}
+	return false;
+}
+}
+
+void xr_initialize_allocation_statistics(const char* arguments)
+{
+	// Core initialization precedes worker creation. No runtime toggle/reset.
+	xrAllocationTrackingEnabled = exactArgument(arguments, "-zone_profile") && exactArgument(arguments, "-zone_memory");
+}
+
+xrAllocationStatistics xr_get_allocation_statistics()
+{
+	// Independently monotonic totals: this is not a transaction across counters.
+	return { allocationCalls.load(std::memory_order_relaxed), reallocationCalls.load(std::memory_order_relaxed),
+		freeCalls.load(std::memory_order_relaxed), allocationRequestedBytes.load(std::memory_order_relaxed),
+		reallocationRequestedBytes.load(std::memory_order_relaxed) };
+}
 
 #ifndef DEBUG_MEMORY_MANAGER
 # define debug_mode 0
@@ -49,6 +88,11 @@ void* xrMemory::mem_alloc(size_t size
 )
 {
 	stat_calls++;
+	if (xrAllocationTrackingEnabled)
+	{
+		allocationCalls.fetch_add(1, std::memory_order_relaxed);
+		allocationRequestedBytes.fetch_add(size, std::memory_order_relaxed);
+	}
 
 #ifdef PURE_ALLOC
 	if (g_use_pure_alloc)
@@ -134,6 +178,8 @@ void* xrMemory::mem_alloc(size_t size
 void xrMemory::mem_free(void* P)
 {
 	stat_calls++;
+	if (xrAllocationTrackingEnabled)
+		freeCalls.fetch_add(1, std::memory_order_relaxed);
 #ifdef USE_MEMORY_MONITOR
     memory_monitor::monitor_free(P);
 #endif // USE_MEMORY_MONITOR
@@ -183,6 +229,11 @@ void* xrMemory::mem_realloc(void* P, size_t size
 )
 {
 	stat_calls++;
+	if (xrAllocationTrackingEnabled)
+	{
+		reallocationCalls.fetch_add(1, std::memory_order_relaxed);
+		reallocationRequestedBytes.fetch_add(size, std::memory_order_relaxed);
+	}
 
 	if (0 == P)
 	{

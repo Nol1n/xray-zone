@@ -91,10 +91,10 @@ BOOL CLevelChanger::net_Spawn(CSE_Abstract* DC)
 		}
 	}
 
+	l_pShape->ComputeBounds();
 	BOOL bOk = inherited::net_Spawn(DC);
 	if (bOk)
 	{
-		l_pShape->ComputeBounds();
 		Fvector P;
 		XFORM().transform_tiny(P, CFORM()->getSphere().P);
 		setEnabled(TRUE);

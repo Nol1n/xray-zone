@@ -77,6 +77,9 @@ CParticlesPlayer::~CParticlesPlayer()
 
 void CParticlesPlayer::LoadParticles(IKinematics* K)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	VERIFY(K);
 
 	m_Bones.clear();
@@ -132,6 +135,9 @@ void CParticlesPlayer::net_DestroyParticles()
 
 CParticlesPlayer::SBoneInfo* CParticlesPlayer::get_nearest_bone_info(IKinematics* K, u16 bone_index)
 {
+	#ifdef DEDICATED_SERVER
+	return nullptr;
+	#endif
 	u16 play_bone = bone_index;
 	while ((BI_NONE != play_bone) && !(bone_mask & (u64(1) << u64(play_bone))))
 	{
@@ -144,6 +150,9 @@ CParticlesPlayer::SBoneInfo* CParticlesPlayer::get_nearest_bone_info(IKinematics
 void CParticlesPlayer::StartParticles(const shared_str& particles_name, u16 bone_num, const Fvector& dir, u16 sender_id,
                                       int life_time, bool auto_stop)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	Fmatrix xform;
 	generate_orthonormal_basis(dir, xform);
 	StartParticles(particles_name, bone_num, xform, sender_id, life_time, auto_stop);
@@ -152,6 +161,9 @@ void CParticlesPlayer::StartParticles(const shared_str& particles_name, u16 bone
 void CParticlesPlayer::StartParticles(const shared_str& particles_name, u16 bone_num, const Fmatrix& xform,
                                       u16 sender_id, int life_time, bool auto_stop)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	VERIFY(fis_zero(xform.c.magnitude()));
 	R_ASSERT(*particles_name);
 
@@ -181,6 +193,9 @@ void CParticlesPlayer::StartParticles(const shared_str& particles_name, u16 bone
 void CParticlesPlayer::StartParticles(const shared_str& ps_name, const Fmatrix& xform, u16 sender_id, int life_time,
                                       bool auto_stop)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	CObject* object = m_self_object;
 	VERIFY(object);
 	for (BoneInfoVecIt it = m_Bones.begin(); it != m_Bones.end(); it++)
@@ -206,6 +221,9 @@ void CParticlesPlayer::StartParticles(const shared_str& ps_name, const Fmatrix& 
 void CParticlesPlayer::StartParticles(const shared_str& ps_name, const Fvector& dir, u16 sender_id, int life_time,
                                       bool auto_stop)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	Fmatrix xform;
 	generate_orthonormal_basis(dir, xform);
 	StartParticles(ps_name, xform, sender_id, life_time, auto_stop);
@@ -214,6 +232,9 @@ void CParticlesPlayer::StartParticles(const shared_str& ps_name, const Fvector& 
 
 void CParticlesPlayer::StopParticles(u16 sender_id, u16 bone_id, bool bDestroy)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	if (BI_NONE == bone_id)
 	{
 		for (BoneInfoVecIt it = m_Bones.begin(); it != m_Bones.end(); it++)
@@ -230,6 +251,9 @@ void CParticlesPlayer::StopParticles(u16 sender_id, u16 bone_id, bool bDestroy)
 
 void CParticlesPlayer::StopParticles(const shared_str& ps_name, u16 bone_id, bool bDestroy)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	if (BI_NONE == bone_id)
 	{
 		for (BoneInfoVecIt it = m_Bones.begin(); it != m_Bones.end(); it++)
@@ -247,6 +271,9 @@ void CParticlesPlayer::StopParticles(const shared_str& ps_name, u16 bone_id, boo
 //остановка партиклов, по истечении их времени жизни
 void CParticlesPlayer::AutoStopParticles(const shared_str& ps_name, u16 bone_id, u32 life_time)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	if (BI_NONE == bone_id)
 	{
 		for (BoneInfoVecIt it = m_Bones.begin(); it != m_Bones.end(); it++)
@@ -266,6 +293,9 @@ void CParticlesPlayer::AutoStopParticles(const shared_str& ps_name, u16 bone_id,
 
 void CParticlesPlayer::UpdateParticles()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	if (!m_bActiveBones) return;
 	m_bActiveBones = false;
 
@@ -315,6 +345,11 @@ void CParticlesPlayer::UpdateParticles()
 
 void CParticlesPlayer::GetBonePos(CObject* pObject, u16 bone_id, const Fvector& offset, Fvector& result)
 {
+	#ifdef DEDICATED_SERVER
+	VERIFY(pObject);
+	result.add(pObject->Position(), offset);
+	return;
+	#endif
 	VERIFY(pObject);
 	IKinematics* pKinematics = smart_cast<IKinematics*>(pObject->Visual());
 	VERIFY(pKinematics);
@@ -334,6 +369,9 @@ void CParticlesPlayer::MakeXFORM(CObject* pObject, u16 bone_id, const Fvector& d
 
 u16 CParticlesPlayer::GetNearestBone(IKinematics* K, u16 bone_id)
 {
+	#ifdef DEDICATED_SERVER
+	return BI_NONE;
+	#endif
 	u16 play_bone = bone_id;
 
 	while ((BI_NONE != play_bone) && !(bone_mask & (u64(1) << u64(play_bone))))

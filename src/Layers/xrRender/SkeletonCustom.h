@@ -6,6 +6,7 @@
 #include		"../../xrEngine/bone.h"
 #include		"../../Include/xrRender/Kinematics.h"
 #include "../../xrEngine/IRenderable.h"
+#include "../../xrEngine/object_collision_pose.h"
 #include <optional>
 
 // refs
@@ -89,7 +90,7 @@ DEFINE_VECTOR(intrusive_ptr<CSkeletonWallmark>, SkeletonWMVec, SkeletonWMVecIt);
 #	define _DBG_SINGLE_USE_MARKER
 #endif
 
-class CKinematics : public FHierrarhyVisual, public IKinematics
+class CKinematics : public FHierrarhyVisual, public IKinematics, public IObjectCollisionPose
 {
 	typedef FHierrarhyVisual inherited;
 	friend class CBoneData;
@@ -111,6 +112,16 @@ public:
 	virtual void OnCalculateBones()
 	{
 	}
+
+	IObjectCollisionPose* dcast_CollisionPose() override { return this; }
+	const Fbox& bounds_box() const override { return vis.box; }
+	const Fsphere& bounds_sphere() const override { return vis.sphere; }
+	void calculate_pose() override { CalculateBones(); }
+	u64 visible_bones() override { return LL_GetBonesVisible(); }
+	u16 bone_count() const override { return LL_BoneCount(); }
+	BOOL bone_visible(u16 bone_id) override { return LL_GetBoneVisible(bone_id); }
+	const SBoneShape& bone_shape(u16 bone_id) override { return LL_GetData(bone_id).shape; }
+	const Fmatrix& bone_transform(u16 bone_id) override { return LL_GetTransform(bone_id); }
 
 public:
 	dxRender_Visual* m_lod;

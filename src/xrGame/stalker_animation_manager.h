@@ -20,6 +20,8 @@ class CWeapon;
 class CMissile;
 class CPropertyStorage;
 class CStalkerAnimationData;
+class IObjectCollisionPose;
+struct SMotionPlaybackState;
 
 class CStalkerAnimationManager
 {
@@ -62,6 +64,22 @@ private:
 	CAI_Stalker* m_object;
 	IRenderVisual* m_visual;
 	IKinematicsAnimated* m_skeleton_animated;
+	MotionID m_cpu_locomotion_animation;
+	MotionID m_cpu_torso_animation;
+	MotionID m_cpu_head_animation;
+	MotionID m_cpu_global_animation;
+	MotionID m_cpu_script_animation;
+	MotionID m_cpu_root_motion_animation;
+	Fmatrix m_cpu_root_start_transform;
+	Fmatrix m_cpu_root_blend_from;
+	Fmatrix m_cpu_root_blend_to;
+	float m_cpu_root_blend_duration;
+	u8 m_cpu_root_motion_group;
+	bool m_cpu_root_motion_active;
+	bool m_cpu_locomotion_stopped;
+	bool m_cpu_torso_stopped;
+	bool m_cpu_head_stopped;
+	bool m_cpu_global_stopped;
 
 private:
 	CWeapon* m_weapon;
@@ -140,6 +158,7 @@ private:
 	MotionID unknown_object_animation(u32 slot, const EBodyState& body_state) const;
 	MotionID weapon_animation(u32 slot, const EBodyState& body_state);
 	MotionID missile_animation(u32 slot, const EBodyState& body_state);
+	MotionID assign_head_animation_cpu() const;
 
 private:
 	IC float legs_switch_factor() const;
@@ -160,6 +179,7 @@ private:
 
 public:
 	MotionID assign_global_animation(bool& animation_movement_controller);
+	MotionID assign_default_global_animation(bool& animation_movement_controller);
 	IC bool non_script_need_update() const;
 
 private:
@@ -179,7 +199,11 @@ private:
 	IC void play_head();
 	IC void play_torso();
 	void play_legs();
+	void on_cpu_torso_animation_end();
 	void update_impl();
+	void stop_cpu_root_motion(IObjectCollisionPose* pose);
+	bool update_cpu_root_motion(IObjectCollisionPose* pose, const MotionID& motion,
+	                            const Fmatrix* start_transform, const SMotionPlaybackState* state, u8 controller_group);
 
 private:
 	static void global_play_callback(CBlend* blend);
@@ -193,6 +217,7 @@ public:
 	virtual void reinit();
 	virtual void reload();
 	virtual void update();
+	bool update_cpu_animations();
 	void play_fx(float power_factor, int fx_index);
 	void play_delayed_callbacks();
 

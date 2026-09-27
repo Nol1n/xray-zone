@@ -671,6 +671,9 @@ void CConsole::ExecuteCommand(LPCSTR cmd_str, bool record_cmd)
 
 void CConsole::Show()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#else
 	//SECUROM_MARKER_HIGH_SECURITY_ON(11)
 
 	if (bVisible)
@@ -692,12 +695,17 @@ void CConsole::Show()
 	Device.seqFrame.Add(this);
 
 	//SECUROM_MARKER_HIGH_SECURITY_OFF(11)
+	#endif // DEDICATED_SERVER
 }
 
 extern CInput* pInput;
 
 void CConsole::Hide()
 {
+	#ifdef DEDICATED_SERVER
+	bVisible = false;
+	return;
+	#else
 	if (!bVisible)
 	{
 		return;
@@ -721,6 +729,7 @@ void CConsole::Hide()
 	Device.seqFrame.Remove(this);
 	Device.seqRender.Remove(this);
 	m_editor->IR_Release();
+	#endif // DEDICATED_SERVER
 }
 
 void CConsole::SelectCommand()

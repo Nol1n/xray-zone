@@ -11,6 +11,8 @@
 #include "monster_event_manager.h"
 #include "control_jump.h"
 #include "../../sound_player.h"
+#include "../../../xrEngine/object_collision_pose.h"
+#include "../../../xrEngine/SkeletonMotions.h"
 
 // DEBUG purpose only
 char* dbg_action_name_table[] = {
@@ -154,16 +156,25 @@ bool CControlAnimationBase::get_animation_info(EMotionAnim anim, u32 index, Moti
 	char* animation_name_buffer;
 	STRCONCAT(animation_name_buffer, anim_it->target_name, itoa(index, index_string_buffer, 10));
 
-	IKinematicsAnimated* animated = smart_cast<IKinematicsAnimated*>(m_object->Visual());
-	if (!animated)
+	if (IKinematicsAnimated* animated = smart_cast<IKinematicsAnimated*>(m_object->Visual()))
 	{
-		return false;
+		motion = animated->ID_Cycle_Safe(animation_name_buffer);
+		if (!motion.valid())
+			return false;
+		length = animated->get_animation_length(motion);
+		return true;
 	}
 
-	motion = animated->ID_Cycle_Safe(animation_name_buffer);
+	IObjectCollisionPose* pose = m_object->CollisionPose();
+	if (!pose || !pose->find_cycle(animation_name_buffer, motion))
+		return false;
 
-	length = animated->get_animation_length(motion);
-	return true;
+	SMotionPlaybackState state;
+	state.id = motion;
+	if (!pose->configure_motion_playback_state(state))
+		return false;
+	length = state.speed > EPS_S ? state.time_total / state.speed : state.time_total;
+	return std::isfinite(length) && length > 0.f;
 }
 
 float CControlAnimationBase::get_animation_hit_time(EMotionAnim anim, u32 index) const
@@ -241,8 +252,12 @@ void CControlAnimationBase::select_animation(bool anim_end)
 
 	// установить анимацию	
 	string128 s1, s2;
-	MotionID cur_anim = smart_cast<IKinematicsAnimated*>(m_object->Visual())->ID_Cycle_Safe(
-		strconcat(sizeof(s2), s2, *anim_it->target_name, itoa(index, s1, 10)));
+	LPCSTR animation_name = strconcat(sizeof(s2), s2, *anim_it->target_name, itoa(index, s1, 10));
+	MotionID cur_anim;
+	if (IKinematicsAnimated* animated = smart_cast<IKinematicsAnimated*>(m_object->Visual()))
+		cur_anim = animated->ID_Cycle_Safe(animation_name);
+	else if (IObjectCollisionPose* pose = m_object->CollisionPose())
+		pose->find_cycle(animation_name, cur_anim);
 	if (!cur_anim.valid())
 		FATAL(s2);
 
@@ -331,7 +346,11 @@ void CControlAnimationBase::CheckReplacedAnim()
 SAAParam& CControlAnimationBase::AA_GetParams(LPCSTR anim_name)
 {
 	// искать текущую анимацию в AA_VECTOR
-	MotionID motion = smart_cast<IKinematicsAnimated*>(m_object->Visual())->LL_MotionID(anim_name);
+	MotionID motion;
+	if (IKinematicsAnimated* animated = smart_cast<IKinematicsAnimated*>(m_object->Visual()))
+		motion = animated->LL_MotionID(anim_name);
+	else if (IObjectCollisionPose* pose = m_object->CollisionPose())
+		pose->find_cycle(anim_name, motion);
 
 	for (AA_VECTOR_IT it = m_attack_anims.begin(); it != m_attack_anims.end(); it++)
 	{
@@ -387,7 +406,9 @@ void CControlAnimationBase::FX_Play(EHitSide side, float amount)
 		break;
 	}
 
-	if (p_str && p_str->size()) smart_cast<IKinematicsAnimated*>(m_object->Visual())->PlayFX(*(*p_str), amount);
+	if (p_str && p_str->size())
+		if (IKinematicsAnimated* animated = smart_cast<IKinematicsAnimated*>(m_object->Visual()))
+			animated->PlayFX(*(*p_str), amount);
 
 	fx_time_last_play = m_object->m_dwCurrentTime;
 }
@@ -397,9 +418,13 @@ float CControlAnimationBase::GetAnimSpeed(EMotionAnim anim)
 	SAnimItem* anim_it = m_anim_storage[anim];
 	VERIFY(anim_it);
 
-	CMotionDef* def = get_motion_def(anim_it, 0);
+	if (IKinematicsAnimated* animated = smart_cast<IKinematicsAnimated*>(m_object->Visual()))
+		return get_motion_def(anim_it, 0)->Speed();
 
-	return (def->Dequantize(def->speed));
+	IObjectCollisionPose* pose = m_object->CollisionPose();
+	SMotionPlaybackState state;
+	state.id = get_motion_id(anim, 0);
+	return pose && pose->configure_motion_playback_state(state) ? state.speed : 1.f;
 }
 
 
@@ -526,6 +551,9 @@ void CControlAnimationBase::ValidateAnimation()
 void CControlAnimationBase::UpdateAnimCount()
 {
 	IKinematicsAnimated* skel = smart_cast<IKinematicsAnimated*>(m_object->Visual());
+	IObjectCollisionPose* pose = m_object->CollisionPose();
+	if (!skel && !pose)
+		return;
 
 	for (ANIM_ITEM_VECTOR_IT it = m_anim_storage.begin(); it != m_anim_storage.end(); it++)
 	{
@@ -541,9 +569,10 @@ void CControlAnimationBase::UpdateAnimCount()
 		{
 			strconcat(sizeof(s_temp), s_temp, *((*it)->target_name), itoa(i, s, 10));
 			LPCSTR name = s_temp;
-			MotionID id = skel->ID_Cycle_Safe(name);
+			MotionID id;
+			const bool found = skel ? (id = skel->ID_Cycle_Safe(name), id.valid()) : pose->find_cycle(name, id);
 
-			if (id.valid())
+			if (found && id.valid())
 			{
 				count++;
 				AddAnimTranslation(id, name);
@@ -607,8 +636,13 @@ MotionID CControlAnimationBase::get_motion_id(EMotionAnim a, u32 index)
 	}
 
 	string128 s1, s2;
-	return (smart_cast<IKinematicsAnimated*>(m_object->Visual())->ID_Cycle_Safe(
-		strconcat(sizeof(s2), s2, *anim_it->target_name, itoa(index, s1, 10))));
+	LPCSTR name = strconcat(sizeof(s2), s2, *anim_it->target_name, itoa(index, s1, 10));
+	if (IKinematicsAnimated* animated = smart_cast<IKinematicsAnimated*>(m_object->Visual()))
+		return animated->ID_Cycle_Safe(name);
+	MotionID result;
+	if (IObjectCollisionPose* pose = m_object->CollisionPose())
+		pose->find_cycle(name, result);
+	return result;
 }
 
 void CControlAnimationBase::stop_now()
@@ -712,10 +746,14 @@ void CControlAnimationBase::AA_reload(LPCSTR section)
 	LPCSTR anim_name, val;
 
 	IKinematicsAnimated* skel_animated = smart_cast<IKinematicsAnimated*>(m_object->Visual());
+	IObjectCollisionPose* pose = m_object->CollisionPose();
 
 	for (u32 i = 0; pSettings->r_line(section, i, &anim_name, &val); ++i)
 	{
-		anim.motion = skel_animated->LL_MotionID(anim_name);
+		if (skel_animated)
+			anim.motion = skel_animated->LL_MotionID(anim_name);
+		else if (pose)
+			pose->find_cycle(anim_name, anim.motion);
 		if (!anim.motion.valid()) continue;
 
 		// check if it is compound (if there is one item, mean it as a section)

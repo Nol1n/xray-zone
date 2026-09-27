@@ -24,6 +24,22 @@ void CRenderDevice::_Destroy(BOOL bKeepTextures)
 
 void CRenderDevice::Destroy(void)
 {
+#ifdef DEDICATED_SERVER
+	if (!b_is_Ready) return;
+	b_is_Ready = FALSE;
+	seqRender.R.clear();
+	seqAppActivate.R.clear();
+	seqAppDeactivate.R.clear();
+	seqAppStart.R.clear();
+	seqAppEnd.R.clear();
+	seqFrame.R.clear();
+	seqFrameMT.R.clear();
+	seqDeviceReset.R.clear();
+	seqParallel.clear();
+	xr_delete(Statistic);
+	return;
+#endif
+
 	if (!b_is_Ready) return;
 
 	Log("Destroying Direct3D...");

@@ -25,6 +25,7 @@
 #include "CharacterPhysicsSupport.h"
 #include "inventory.h"
 #include "weapon.h"
+#include "../xrEngine/object_collision_pose.h"
 
 namespace smart_cover
 {
@@ -295,8 +296,19 @@ void stalker_movement_manager_smart_cover::reach_enter_location(u32 const& time_
 	VERIFY(m_enter_cover_id != "");
 	VERIFY(m_enter_loophole_id != "");
 
-	m_enter_animation = smart_cast<IKinematicsAnimated*>(object().Visual())->ID_Cycle(
-		current_transition().animation().animation_id());
+	shared_str enter_animation_name = current_transition().animation().animation_id();
+	if (IRenderVisual* visual = object().Visual())
+	{
+		IKinematicsAnimated* skeleton_animated = smart_cast<IKinematicsAnimated*>(visual);
+		VERIFY(skeleton_animated);
+		m_enter_animation = skeleton_animated->ID_Cycle(enter_animation_name.c_str());
+	}
+	else
+	{
+		IObjectCollisionPose* pose = object().CollisionPose();
+	VERIFY2(pose && pose->find_cycle(enter_animation_name.c_str(), m_enter_animation),
+			"smart-cover transition cycle is missing from the CPU motion catalog");
+	}
 
 	CStalkerAnimationManager& animation = object().animation();
 

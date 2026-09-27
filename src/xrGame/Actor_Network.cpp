@@ -557,7 +557,10 @@ BOOL CActor::net_Spawn(CSE_Abstract* DC)
 	//.		CurrentGameUI()->UIMainIngameWnd->m_artefactPanel->InitIcons(m_ArtefactsOnBelt);
 
 
-	ROS()->force_mode(IRender_ObjectSpecific::TRACE_ALL);
+#ifndef DEDICATED_SERVER
+	if (ROS())
+		ROS()->force_mode(IRender_ObjectSpecific::TRACE_ALL);
+#endif
 
 	//mstate_wishful = E->mstate;
 	mstate_wishful = 0;
@@ -654,7 +657,10 @@ BOOL CActor::net_Spawn(CSE_Abstract* DC)
 	*/
 	SetDefaultVisualOutfit(cNameVisual());
 
-	smart_cast<IKinematics*>(Visual())->CalculateBones();
+#ifndef DEDICATED_SERVER
+	if (IKinematics* kinematics = smart_cast<IKinematics*>(Visual()))
+		kinematics->CalculateBones();
+#endif
 
 	//--------------------------------------------------------------
 	inventory().SetPrevActiveSlot(NO_ACTIVE_SLOT);
@@ -667,8 +673,11 @@ BOOL CActor::net_Spawn(CSE_Abstract* DC)
 	{
 		mstate_wishful &= ~mcAnyMove;
 		mstate_real &= ~mcAnyMove;
+#ifndef DEDICATED_SERVER
 		IKinematicsAnimated* K = smart_cast<IKinematicsAnimated*>(Visual());
-		K->PlayCycle("death_init");
+		if (K)
+			K->PlayCycle("death_init");
+#endif
 
 
 		//   
@@ -692,8 +701,10 @@ BOOL CActor::net_Spawn(CSE_Abstract* DC)
 
 	if (IsGameTypeSingle())
 	{
+	#ifndef DEDICATED_SERVER
 		Level().MapManager().AddMapLocation("actor_location", ID());
 		Level().MapManager().AddMapLocation("actor_location_p", ID());
+	#endif
 
 		m_statistic_manager = xr_new<CActorStatisticMgr>();
 	}
@@ -845,6 +856,11 @@ void CActor::ResetCallbacks()
 
 void CActor::OnChangeVisual()
 {
+#ifdef DEDICATED_SERVER
+	// No model, skeleton callbacks, attachments, or render-side physics proxy
+	// exist in the headless target. Gameplay movement remains CPU driven.
+	return;
+#else
 	{
 		CPhysicsShell* tmp_shell = PPhysicsShell();
 		PPhysicsShell() = NULL;
@@ -889,6 +905,7 @@ void CActor::OnChangeVisual()
 		m_current_torso_blend = NULL;
 		m_current_jump_blend = NULL;
 	}
+#endif
 };
 
 void CActor::ChangeVisual(shared_str NewVisual)
@@ -901,9 +918,13 @@ void CActor::ChangeVisual(shared_str NewVisual)
 
 	cNameVisual_set(NewVisual);
 
+#ifdef DEDICATED_SERVER
+	return;
+#else
 	g_SetAnimation(mstate_real);
 	Visual()->dcast_PKinematics()->CalculateBones_Invalidate();
 	Visual()->dcast_PKinematics()->CalculateBones(TRUE);
+#endif
 };
 
 void ACTOR_DEFS::net_update::lerp(ACTOR_DEFS::net_update& A, ACTOR_DEFS::net_update& B, float f)

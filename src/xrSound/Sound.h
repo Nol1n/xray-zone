@@ -396,6 +396,7 @@ public:
 	}
 
 	static void _create(int stage);
+	static void _create_silent();
 	static void _destroy();
 
 	virtual void _restart() = 0;
@@ -455,10 +456,25 @@ IC ref_sound_data::ref_sound_data()
 
 IC ref_sound_data::ref_sound_data(LPCSTR fName, esound_type sound_type, int game_type)
 {
-	::Sound->_create_data(*this, fName, sound_type, game_type);
+	if (::Sound)
+		::Sound->_create_data(*this, fName, sound_type, game_type);
+	else
+	{
+		handle = nullptr;
+		feedback = nullptr;
+		g_type = game_type;
+		g_object = nullptr;
+		s_type = sound_type;
+		dwBytesTotal = 0;
+		fTimeTotal = 0.f;
+	}
 }
 
-IC ref_sound_data::~ref_sound_data() { ::Sound->_destroy_data(*this); }
+IC ref_sound_data::~ref_sound_data()
+{
+	if (::Sound)
+		::Sound->_destroy_data(*this);
+}
 
 IC void ref_sound::create(LPCSTR name, esound_type sound_type, int game_type)
 {
@@ -506,7 +522,7 @@ IC void ref_sound::play_no_feedback(CObject* O, u32 flags, float d, Fvector* pos
 IC void ref_sound::set_position(const Fvector& pos)
 {
 	VERIFY(!::Sound->i_locked());
-	VERIFY(_feedback());
+	if (!_feedback()) return;
 	_feedback()->set_position(pos);
 }
 

@@ -17,6 +17,14 @@
 
 CProjector::CProjector()
 {
+#ifdef DEDICATED_SERVER
+	// Projectors are scenery: a headless server keeps the inherited object only.
+#ifdef PROJECTOR_NEW
+	m_active = false;
+	m_lights.clear();
+	m_controls.clear();
+#endif
+#else
 #ifdef PROJECTOR_NEW
 	m_active = false;
 
@@ -30,6 +38,7 @@ CProjector::CProjector()
 	lanim = 0;
 	bone_x.id = BI_NONE;
 	bone_y.id = BI_NONE;
+#endif
 #endif
 }
 
@@ -83,6 +92,12 @@ BOOL CProjector::net_Spawn(CSE_Abstract* DC)
 
 	if (!inherited::net_Spawn(DC))
 		return (FALSE);
+
+#ifdef DEDICATED_SERVER
+	setVisible(FALSE);
+	setEnabled(FALSE);
+	return TRUE;
+#endif
 
 	R_ASSERT(Visual() && smart_cast<IKinematics*>(Visual()));
 
@@ -197,6 +212,9 @@ BOOL CProjector::net_Spawn(CSE_Abstract* DC)
 
 void CProjector::shedule_Update(u32 dt)
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	inherited::shedule_Update(dt);
 #ifdef PROJECTOR_NEW
 	CPHSkeleton::Update(dt);
@@ -208,6 +226,9 @@ void CProjector::shedule_Update(u32 dt)
 #else
 void CProjector::TurnOn()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	if (light_render->get_active()) return;
 
 	light_render->set_active(true);
@@ -222,6 +243,9 @@ void CProjector::TurnOn()
 
 void CProjector::TurnOff()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	if (!light_render->get_active()) return;
 
 	light_render->set_active(false);
@@ -233,6 +257,9 @@ void CProjector::TurnOff()
 
 void CProjector::UpdateCL()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	inherited::UpdateCL();
 
 #ifdef PROJECTOR_NEW
@@ -368,6 +395,9 @@ Fvector CProjector::GetCurrentDirection()
 void CProjector::net_Destroy()
 {
 	inherited::net_Destroy();
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	CPHUpdateObject::Deactivate();
 	CPHSkeleton::RespawnInit();
 	processing_deactivate();

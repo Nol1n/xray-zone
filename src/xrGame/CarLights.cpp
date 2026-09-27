@@ -35,6 +35,9 @@ void SCarLight::Init(CCarLights* holder)
 
 void SCarLight::ParseDefinitions(LPCSTR section)
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	light_render = ::Render->light_create();
 	light_render->set_type(IRender_Light::SPOT);
 	light_render->set_shadow(true);
@@ -69,6 +72,9 @@ void SCarLight::ParseDefinitions(LPCSTR section)
 
 void SCarLight::Switch()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	VERIFY(!physics_world()->Processing());
 	if (isOn())TurnOff();
 	else TurnOn();
@@ -76,6 +82,9 @@ void SCarLight::Switch()
 
 void SCarLight::TurnOn()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	VERIFY(!physics_world()->Processing());
 	if (isOn()) return;
 	IKinematics* K = smart_cast<IKinematics*>(m_holder->PCar()->Visual());
@@ -89,6 +98,9 @@ void SCarLight::TurnOn()
 
 void SCarLight::TurnOff()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	VERIFY(!physics_world()->Processing());
 	if (!isOn()) return;
 	glow_render->set_active(false);
@@ -98,6 +110,9 @@ void SCarLight::TurnOff()
 
 bool SCarLight::isOn()
 {
+#ifdef DEDICATED_SERVER
+	return false;
+#endif
 	VERIFY(!physics_world()->Processing());
 	VERIFY(light_render->get_active()==glow_render->get_active());
 	return light_render->get_active();
@@ -105,6 +120,9 @@ bool SCarLight::isOn()
 
 void SCarLight::Update()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	VERIFY(!physics_world()->Processing());
 	if (!isOn()) return;
 	CCar* pcar = m_holder->PCar();
@@ -131,6 +149,9 @@ void CCarLights::Init(CCar* pcar)
 
 void CCarLights::ParseDefinitions()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	CInifile* ini = smart_cast<IKinematics*>(m_pcar->Visual())->LL_UserData();
 	if (!ini->section_exist("lights")) return;
 	LPCSTR S = ini->r_string("lights", "headlights");
@@ -147,6 +168,9 @@ void CCarLights::ParseDefinitions()
 
 void CCarLights::Update()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	VERIFY(!physics_world()->Processing());
 	LIGHTS_I i = m_lights.begin(), e = m_lights.end();
 	for (; i != e; ++i) (*i)->Update();

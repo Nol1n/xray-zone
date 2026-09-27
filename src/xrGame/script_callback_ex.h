@@ -10,6 +10,7 @@
 
 #include "ai_space.h"
 #include "script_engine.h"
+#include "../xrEngine/zone_profiler.h"
 
 IC bool compare_safe(const luabind::object& o1, const luabind::object& o2)
 {
@@ -114,6 +115,7 @@ public:
             {
                 if (m_functor)
                 {
+                    zone_profiler::Scope profileLuaCallback(zone_profiler::Zone::LuaCallback);
                     VERIFY(m_functor.is_valid());
                     if (m_object.is_valid())
                     {
@@ -144,6 +146,7 @@ public:
             {
                 if (m_functor)
                 {
+                    zone_profiler::Scope profileLuaCallback(zone_profiler::Zone::LuaCallback);
                     VERIFY(m_functor.is_valid());
                     if (m_object.is_valid())
                     {
@@ -176,6 +179,7 @@ void CScriptCallbackEx<void>::operator()(Args &&...args) const
         {
             if (m_functor)
             {
+                zone_profiler::Scope profileLuaCallback(zone_profiler::Zone::LuaCallback);
                 VERIFY(m_functor.is_valid());
                 if (m_object.is_valid())
                 {
@@ -207,6 +211,7 @@ void CScriptCallbackEx<void>::operator()(Args &&...args)
         {
             if (m_functor)
             {
+                zone_profiler::Scope profileLuaCallback(zone_profiler::Zone::LuaCallback);
                 VERIFY(m_functor.is_valid());
                 if (m_object.is_valid())
                 {

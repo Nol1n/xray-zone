@@ -11,6 +11,7 @@
 #include "stalker_animation_data.h"
 #include "object_broker.h"
 #include "../Include/xrRender/Kinematics.h"
+#include "../xrEngine/object_collision_pose.h"
 
 CStalkerAnimationDataStorage* g_stalker_animation_data_storage = 0;
 
@@ -51,6 +52,11 @@ void CStalkerAnimationDataStorage::clear()
 		xr_delete(m_objects.back().second);
 		m_objects.pop_back();
 	}
+	while (!m_cpu_objects.empty())
+	{
+		xr_delete(m_cpu_objects.back().second);
+		m_cpu_objects.pop_back();
+	}
 }
 
 const CStalkerAnimationData* CStalkerAnimationDataStorage::object(IKinematicsAnimated* skeleton_animated)
@@ -61,4 +67,16 @@ const CStalkerAnimationData* CStalkerAnimationDataStorage::object(IKinematicsAni
 
 	m_objects.push_back(std::make_pair(skeleton_animated, xr_new<CStalkerAnimationData>(skeleton_animated)));
 	return (m_objects.back().second);
+}
+
+const CStalkerAnimationData* CStalkerAnimationDataStorage::object(IObjectCollisionPose* pose, shared_str visual_name)
+{
+	if (!pose || !visual_name)
+		return nullptr;
+	for (CPU_OBJECTS::const_iterator it = m_cpu_objects.begin(); it != m_cpu_objects.end(); ++it)
+		if (it->first == visual_name)
+			return it->second;
+
+	m_cpu_objects.push_back(std::make_pair(visual_name, xr_new<CStalkerAnimationData>(pose)));
+	return m_cpu_objects.back().second;
 }

@@ -5,6 +5,7 @@
 #include "control_animation_base.h"
 #include "control_direction_base.h"
 #include "control_movement_base.h"
+#include "../../../xrEngine/object_collision_pose.h"
 
 void CControlRunAttack::load(LPCSTR section)
 {
@@ -40,8 +41,15 @@ void CControlRunAttack::activate()
 	SControlAnimationData* ctrl_anim = (SControlAnimationData*)m_man->data(this, ControlCom::eControlAnimation);
 	VERIFY(ctrl_anim);
 
-	ctrl_anim->global.set_motion(
-		smart_cast<IKinematicsAnimated*>(m_object->Visual())->ID_Cycle_Safe("stand_attack_run_0"));
+	MotionID attack_motion;
+	if (IKinematicsAnimated* animated = smart_cast<IKinematicsAnimated*>(m_object->Visual()))
+		attack_motion = animated->ID_Cycle_Safe("stand_attack_run_0");
+	else if (IObjectCollisionPose* pose = m_object->CollisionPose())
+		pose->find_cycle("stand_attack_run_0", attack_motion);
+	VERIFY(attack_motion.valid());
+	if (!attack_motion.valid())
+		return;
+	ctrl_anim->global.set_motion(attack_motion);
 	ctrl_anim->global.actual = false;
 }
 
@@ -91,11 +99,12 @@ void CControlRunAttack::on_event(ControlCom::EEventType type, ControlCom::IEvent
 				this, ControlCom::eControlAnimation);
 			VERIFY(ctrl_data_anim);
 
-			CBlend* blend = m_man->animation().current_blend();
-			VERIFY(blend);
-
-			// animation time
-			float anim_time = blend ? blend->timeTotal / blend->speed : 0.0f;
+			const float anim_time = m_man->animation().current_animation_duration();
+			if (!std::isfinite(anim_time) || anim_time <= EPS_S)
+			{
+				m_man->notify(ControlCom::eventRunAttackEnd, 0);
+				break;
+			}
 
 			// run velocity
 			u32 velocity_mask = MonsterMovement::eVelocityParameterRunNormal;

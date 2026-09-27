@@ -78,6 +78,11 @@ MotionID CStalkerAnimationManager::assign_global_animation(bool& animation_movem
 {
 	if (m_global_selector)
 		return (m_global_selector(animation_movement_controller));
+	return assign_default_global_animation(animation_movement_controller);
+}
+
+MotionID CStalkerAnimationManager::assign_default_global_animation(bool& animation_movement_controller)
+{
 
 	animation_movement_controller = false;
 

@@ -27,8 +27,10 @@ SArtefactActivation::SArtefactActivation(CArtefact* af, u32 owner_id)
 {
 	m_af = af;
 	Load();
+	#ifndef DEDICATED_SERVER
 	m_light = ::Render->light_create();
 	m_light->set_shadow(true);
+	#endif
 	m_owner_id = owner_id;
 	m_in_process = false;
 }
@@ -66,7 +68,9 @@ void SArtefactActivation::Start()
 	P.w_u16(m_af->ID());
 	if (OnServer())
 		CGameObject::u_EventSend(P);
+	#ifndef DEDICATED_SERVER
 	m_light->set_active(true);
+	#endif
 	ChangeEffects();
 	m_in_process = true;
 }
@@ -142,10 +146,12 @@ void SArtefactActivation::ChangeEffects()
 		m_snd.play_at_pos(m_af, m_af->Position());
 	};
 
+	#ifndef DEDICATED_SERVER
 	m_light->set_range(state_def.m_light_range);
 	m_light->set_color(state_def.m_light_color.r,
 	                   state_def.m_light_color.g,
 	                   state_def.m_light_color.b);
+	#endif
 
 	if (state_def.m_particle.size())
 	{
@@ -170,7 +176,9 @@ void SArtefactActivation::UpdateEffects()
 	if (m_snd._feedback())
 		m_snd.set_position(m_af->Position());
 
+	#ifndef DEDICATED_SERVER
 	m_light->set_position(m_af->Position());
+	#endif
 }
 
 void SArtefactActivation::SpawnAnomaly()

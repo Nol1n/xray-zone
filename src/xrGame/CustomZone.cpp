@@ -387,6 +387,9 @@ BOOL CCustomZone::net_Spawn(CSE_Abstract* DC)
 	m_StartTime = Device.dwTimeGlobal;
 	m_zone_flags.set(eUseOnOffTime, (m_TimeToDisable != 0) && (m_TimeToEnable != 0));
 
+	// Add renderer lights on clients. The zone's CPU hit/force/temperature
+	// simulation remains active on a dedicated server without light objects.
+	#ifndef DEDICATED_SERVER
 	//добавить источники света
 	bool br1 = (0 == psDeviceFlags.test(rsR2 | rsR3 | rsR4)); //Alundaio: rsR4 flag
 
@@ -417,6 +420,10 @@ BOOL CCustomZone::net_Spawn(CSE_Abstract* DC)
 	}
 	else
 		m_pLight = NULL;
+	#else
+	m_pIdleLight = NULL;
+	m_pLight = NULL;
+	#endif
 
 	setEnabled(TRUE);
 
@@ -1137,6 +1144,8 @@ void CCustomZone::StartBlowoutLight()
 void CCustomZone::StopBlowoutLight()
 {
 	m_fLightTimeLeft = 0.f;
+	if (!m_pLight)
+		return;
 	m_pLight->set_active(false);
 }
 

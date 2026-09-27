@@ -50,6 +50,9 @@
 #include "xrPhysics/IPHWorld.h"
 #include "xrPhysics/console_vars.h"
 #include "../xrEngine/device.h"
+#ifdef DEDICATED_SERVER
+#include "../xrEngine/DedicatedServer.h"
+#endif // DEDICATED_SERVER
 
 #include "UIGameCustom.h"
 #include "ui/UIPdaWnd.h"
@@ -71,6 +74,7 @@
 #endif
 extern ENGINE_API bool g_dedicated_server;
 extern ENGINE_API BOOL	g_bootComplete;
+extern void ZoneProfileVerifyEventsOnFrame();
 extern CUISequencer* g_tutorial;
 extern CUISequencer* g_tutorial2;
 
@@ -233,15 +237,45 @@ CLevel::CLevel() :
     , DemoCS(MUTEX_PROFILE_ID(DemoCS))
 #endif
 {
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("CLevel constructor body entered");
+	#endif // DEDICATED_SERVER
 	g_bDebugEvents = strstr(Core.Params, "-debug_ge") != nullptr;
 	game_events = xr_new<NET_Queue_Event>();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("CLevel event queue created");
+	#endif // DEDICATED_SERVER
 
     eChangeRP = Engine.Event.Handler_Attach("LEVEL:ChangeRP", this);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("CLevel change-RP event attached");
+	#endif // DEDICATED_SERVER
     eDemoPlay = Engine.Event.Handler_Attach("LEVEL:PlayDEMO", this);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("CLevel demo-play event attached");
+	#endif // DEDICATED_SERVER
     eChangeTrack = Engine.Event.Handler_Attach("LEVEL:PlayMusic", this);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("CLevel play-music event attached");
+	#endif // DEDICATED_SERVER
     eEnvironment = Engine.Event.Handler_Attach("LEVEL:Environment", this);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("CLevel environment event attached");
+	#endif // DEDICATED_SERVER
     eEntitySpawn = Engine.Event.Handler_Attach("LEVEL:spawn", this);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("CLevel spawn event attached");
+	#endif // DEDICATED_SERVER
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("CLevel creating bullet manager");
+	#endif // DEDICATED_SERVER
     m_pBulletManager = xr_new<CBulletManager>();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("CLevel bullet manager created");
+	#endif // DEDICATED_SERVER
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("CLevel event handlers and bullet manager created");
+	#endif // DEDICATED_SERVER
     if (!g_dedicated_server)
     {
         m_map_manager = xr_new<CMapManager>();
@@ -249,6 +283,9 @@ CLevel::CLevel() :
     }
     m_dwDeltaUpdate = u32(fixed_step * 1000);
     m_seniority_hierarchy_holder = xr_new<CSeniorityHierarchyHolder>();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("CLevel simulation managers created");
+	#endif // DEDICATED_SERVER
     if (!g_dedicated_server)
     {
         m_level_sound_manager = xr_new<CLevelSoundManager>();
@@ -262,10 +299,28 @@ CLevel::CLevel() :
     }
     m_ph_commander = xr_new<CPHCommander>();
     m_ph_commander_scripts = xr_new<CPHCommander>();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("CLevel physics commanders created");
+	#endif // DEDICATED_SERVER
     pObjects4CrPr.clear();
     pActors4CrPr.clear();
-    g_player_hud = xr_new<player_hud>();
-    g_player_hud->load_default();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("CLevel parallel object lists cleared");
+	#endif // DEDICATED_SERVER
+    if (!g_dedicated_server)
+    {
+	#ifdef DEDICATED_SERVER
+		TraceDedicatedServerBootstrap("CLevel creating player HUD");
+	#endif // DEDICATED_SERVER
+        g_player_hud = xr_new<player_hud>();
+	#ifdef DEDICATED_SERVER
+		TraceDedicatedServerBootstrap("CLevel player HUD created");
+	#endif // DEDICATED_SERVER
+        g_player_hud->load_default();
+	#ifdef DEDICATED_SERVER
+		TraceDedicatedServerBootstrap("CLevel player HUD defaults loaded");
+	#endif // DEDICATED_SERVER
+    }
 
 #ifdef SPAWN_ANTIFREEZE
     spawn_events = xr_new<NET_Queue_Event>();
@@ -1140,6 +1195,16 @@ void CLevel::OnFrame()
 	                                             game->GetEnvironmentGameTimeFactor());
 	if (!g_dedicated_server)
 		ai().script_engine().script_process(ScriptEngine::eScriptProcessorLevel)->update();
+	if (zone_profiler::memorySampleDue())
+	{
+		zone_profiler::Scope sampleMemory(zone_profiler::Zone::MemorySample);
+		// This owner update runs before the render/parallel GC worker resumes.
+		lua_State* state = ai().script_engine().lua();
+		const unsigned long long bytes = static_cast<unsigned long long>(lua_gc(state, LUA_GCCOUNT, 0)) * 1024ULL +
+			static_cast<unsigned long long>(lua_gc(state, LUA_GCCOUNTB, 0));
+		zone_profiler::collectMemoryGauges(bytes);
+	}
+	ZoneProfileVerifyEventsOnFrame();
 	m_ph_commander->update();
 	m_ph_commander_scripts->update();
 	Device.Statistic->TEST0.Begin();
@@ -1186,8 +1251,10 @@ void CLevel::script_gc()
 {
 	if (!(psLua_ParallelGC && Device.LuaGC))
 	{	
-		PROF_EVENT();	
-		lua_gc(ai().script_engine().lua(), LUA_GCSTEP, psLUA_GCSTEP);
+		PROF_EVENT();
+		zone_profiler::Scope profileGC(zone_profiler::Zone::LuaGC, zone_profiler::memoryEnabled());
+		const int completed = lua_gc(ai().script_engine().lua(), LUA_GCSTEP, psLUA_GCSTEP);
+		zone_profiler::recordLuaGcStep(completed == 1);
 	}
 }
 
@@ -1204,7 +1271,10 @@ bool CLevel::Load(u32 dwNum)
 // demonized: called from Device, via Device.LuaGC pointer
 int CLevel::LuaGC()
 {
-    return lua_gc(ai().script_engine().lua(), LUA_GCSTEP, psLua_ParallelGCStep);
+	zone_profiler::Scope profileGC(zone_profiler::Zone::LuaGC, zone_profiler::memoryEnabled());
+	const int completed = lua_gc(ai().script_engine().lua(), LUA_GCSTEP, psLua_ParallelGCStep);
+	zone_profiler::recordLuaGcStep(completed == 1);
+	return completed;
 }
 void CLevel::LuaGCDebug()
 {
@@ -1769,15 +1839,21 @@ bool CLevel::IsClient()
 
 void CLevel::OnAlifeSimulatorUnLoaded()
 {
-	MapManager().ResetStorage();
-	GameTaskManager().ResetStorage();
+	// Dedicated servers do not create the client-side map/task managers.
+	if (m_map_manager)
+		m_map_manager->ResetStorage();
+	if (m_game_task_manager)
+		m_game_task_manager->ResetStorage();
 	delete_data(m_debug_render_queue);
 }
 
 void CLevel::OnAlifeSimulatorLoaded()
 {
-	MapManager().ResetStorage();
-	GameTaskManager().ResetStorage();
+	// Dedicated servers do not create the client-side map/task managers.
+	if (m_map_manager)
+		m_map_manager->ResetStorage();
+	if (m_game_task_manager)
+		m_game_task_manager->ResetStorage();
 	delete_data(m_debug_render_queue);
 }
 

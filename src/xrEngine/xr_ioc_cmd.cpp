@@ -723,6 +723,11 @@ public:
 
 	virtual void Execute(LPCSTR args)
 	{
+#ifdef DEDICATED_SERVER
+		// The dedicated target has no renderer list or renderer flags to update.
+		(void)args;
+		return;
+#else
 		//fill_render_mode_list ();
 		// vid_quality_token must be already created!
 		tokens = vid_quality_token;
@@ -749,10 +754,14 @@ public:
 		r2_advanced_pp = strcmp("renderer_r2.5", renderer_name) == 0;
 		r2_advanced_pp |= strcmp("renderer_r3", renderer_name) == 0;
 		r2_advanced_pp |= strcmp("renderer_r4", renderer_name) == 0;
+#endif
 	}
 
 	virtual void Status(TStatus& S)
 	{
+#ifdef DEDICATED_SERVER
+		xr_strcpy(S, "renderer_disabled");
+#else
 		tokens = vid_quality_token;
 
 		if (tokens == nullptr)
@@ -769,22 +778,31 @@ public:
 		}
 		xr_strcpy(S, "?");
 		return;
+#endif
 	}
 
 	virtual void Save(IWriter* F)
 	{
+#ifdef DEDICATED_SERVER
+		(void)F;
+#else
 		//fill_render_mode_list ();
 		tokens = vid_quality_token;
 		if (!strstr(Core.Params, "-r2"))
 		{
 			inherited::Save(F);
 		}
+#endif
 	}
 
 	virtual xr_token* GetToken()
 	{
+#ifdef DEDICATED_SERVER
+		return nullptr;
+#else
 		tokens = vid_quality_token;
 		return inherited::GetToken();
+#endif
 	}
 };
 #ifndef DEDICATED_SERVER

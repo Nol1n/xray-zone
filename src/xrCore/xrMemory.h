@@ -82,6 +82,20 @@ public:
 
 extern XRCORE_API xrMemory Memory;
 
+// Diagnostic request totals, not live heap size. Each API entry is counted,
+// including nested alloc/free calls made by realloc and unsuccessful requests.
+// Enabled once during core initialization; never toggled while workers run.
+struct xrAllocationStatistics
+{
+	u64 allocationCalls;
+	u64 reallocationCalls;
+	u64 freeCalls;
+	u64 allocationRequestedBytes;
+	u64 reallocationRequestedBytes;
+};
+extern XRCORE_API bool xrAllocationTrackingEnabled;
+XRCORE_API xrAllocationStatistics xr_get_allocation_statistics();
+
 #undef ZeroMemory
 #undef CopyMemory
 #undef FillMemory

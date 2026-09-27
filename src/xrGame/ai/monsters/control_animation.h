@@ -56,6 +56,9 @@ class CControlAnimation : public CControl_ComPure<SControlAnimationData>
 	typedef CControl_ComPure<SControlAnimationData> inherited;
 
 	IKinematicsAnimated* m_skeleton_animated;
+	MotionID m_cpu_global_motion;
+	MotionID m_cpu_legs_motion;
+	MotionID m_cpu_torso_motion;
 
 	// animation events
 	struct SAnimationEvent
@@ -82,12 +85,14 @@ public:
 
 public:
 	virtual void reinit();
+	virtual void update_schedule();
 	virtual void update_frame();
 	virtual void reset_data();
 
 	void add_anim_event(MotionID, float, u32);
 
 	CBlend* current_blend() { return m_data.global.blend; }
+	float current_animation_duration() const;
 
 	void restart();
 
@@ -103,6 +108,7 @@ private:
 	void play_part(SAnimationPart& part, PlayCallback callback);
 	void check_events(SAnimationPart& part);
 	void check_callbacks();
+	bool update_cpu_playback();
 
 	void restart(SAnimationPart& part, PlayCallback callback);
 

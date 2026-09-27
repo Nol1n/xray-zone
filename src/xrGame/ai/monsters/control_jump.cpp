@@ -500,10 +500,8 @@ void CControlJump::on_event(ControlCom::EEventType type, ControlCom::IEventData*
 			ctrl_data_dir->linear_dependency = false;
 			//---------------------------------------------------------------------------------
 
-			CBlend* current_blend = m_man->animation().current_blend();
-			ctrl_data->set_speed(
-				(current_blend ? current_blend->timeTotal / current_blend->speed : 1.0f) /
-				m_jump_time);
+			const float animation_duration = m_man->animation().current_animation_duration();
+			ctrl_data->set_speed((animation_duration > EPS_S ? animation_duration : 1.0f) / m_jump_time);
 		}
 		else
 			ctrl_data->set_speed(-1.f);

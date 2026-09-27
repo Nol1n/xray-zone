@@ -13,6 +13,7 @@
 
 CFlashlight::CFlashlight()
 {
+	#ifndef DEDICATED_SERVER
 	light_render = ::Render->light_create();
 	light_render->set_type(IRender_Light::SPOT);
 	light_render->set_shadow(true);
@@ -21,6 +22,7 @@ CFlashlight::CFlashlight()
 	light_omni->set_shadow(false);
 
 	glow_render = ::Render->glow_create();
+	#endif
 	lanim = 0;
 	fBrightness = 1.f;
 
@@ -46,6 +48,9 @@ BOOL CFlashlight::net_Spawn(CSE_Abstract* DC)
 {
 	if (!inherited::net_Spawn(DC))
 		return FALSE;
+	#ifdef DEDICATED_SERVER
+	return TRUE;
+	#endif
 
 	bool b_r2 = !!psDeviceFlags.test(rsR2);
 	b_r2 |= !!psDeviceFlags.test(rsR3);
@@ -102,6 +107,9 @@ void CFlashlight::Load(LPCSTR section)
 void CFlashlight::SwitchLightOnly()
 {
 	lightRenderState = !lightRenderState;
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 
 	if (can_use_dynamic_lights())
 	{
@@ -115,6 +123,9 @@ void CFlashlight::SwitchLightOnly()
 void CFlashlight::UpdateCL()
 {
 	inherited::UpdateCL();
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 
 	CActor* actor = smart_cast<CActor*>(H_Parent());
 	if (!actor)
@@ -204,6 +215,9 @@ void CFlashlight::ResetLanim()
 		if (lanim->cName != def_lanim)
 			lanim = LALib.FindItem(def_lanim);
 	}
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	
 	if (can_use_dynamic_lights())
 	{
@@ -230,6 +244,9 @@ inline bool CFlashlight::can_use_dynamic_lights()
 void CFlashlight::TurnDeviceInternal(bool b)
 {
 	inherited::TurnDeviceInternal(b);
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 
 	if (can_use_dynamic_lights())
 	{

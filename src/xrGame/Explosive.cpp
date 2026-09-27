@@ -83,6 +83,9 @@ CExplosive::CExplosive(void)
 
 void CExplosive::LightCreate()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	m_pLight = ::Render->light_create();
 	m_pLight->set_shadow(true);
 }
@@ -695,6 +698,9 @@ void CExplosive::FindNormal(Fvector& normal)
 
 void CExplosive::StartLight()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	VERIFY(!physics_world()->Processing());
 	if (m_fLightTime > 0)
 	{

@@ -210,6 +210,9 @@ void SStmBarrel::LoadLights(LPCSTR section, LPCSTR prefix)
 
 void SStmBarrel::Light_Create()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
     light_render = ::Render->light_create();
     if (::Render->get_generation() == IRender_interface::GENERATION_R2)
         light_render->set_shadow(true);
@@ -238,6 +241,9 @@ void SStmBarrel::Light_Start()
 
 void SStmBarrel::Light_Render(const Fvector &P)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
     float light_scale = light_time / light_lifetime;
     R_ASSERT(light_render);
     light_render->set_position(P);

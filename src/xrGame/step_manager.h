@@ -16,6 +16,10 @@ class CStepManager
 
 	u16 m_foot_bones[MAX_LEGS_COUNT];
 	CBlend* m_blend;
+	MotionID m_cpu_step_motion;
+	float m_cpu_step_animation_time;
+	float m_cpu_step_last_time;
+	bool m_cpu_step_clock_initialized;
 
 	struct material_sound
 	{
@@ -43,6 +47,8 @@ public:
 	void on_animation_start(MotionID motion_id, CBlend* blend);
 	// call on updateCL
 	void update(bool b_hud_view);
+	// Drive gameplay footstep callbacks from a CPU locomotion state on headless objects.
+	void update_cpu_footsteps(float dt_seconds);
 
 	// process event
 	virtual void event_on_step()

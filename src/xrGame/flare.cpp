@@ -28,6 +28,9 @@ void CFlare::UpdateXForm()
 
 void CFlare::ActivateFlare()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	VERIFY(!IsFlareActive());
 	SwitchState(eFlareShowing);
 	SwitchOn();
@@ -41,6 +44,9 @@ bool CFlare::IsFlareActive()
 
 void CFlare::OnStateSwitch(u32 S, u32 oldState)
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	inherited::OnStateSwitch(S, oldState);
 
 	switch (S)
@@ -83,6 +89,9 @@ void CFlare::OnStateSwitch(u32 S, u32 oldState)
 
 void CFlare::OnAnimationEnd(u32 state)
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	switch (state)
 	{
 	case eFlareShowing:
@@ -103,6 +112,9 @@ void CFlare::OnAnimationEnd(u32 state)
 
 void CFlare::SwitchOn()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	static int lt = 1; //IRender_Light::POINT
 	static bool ls = true;
 	light_render = ::Render->light_create();
@@ -119,19 +131,27 @@ void CFlare::SwitchOn()
 void CFlare::SwitchOff()
 {
 	SetCondition(0.0f);
+#ifndef DEDICATED_SERVER
 	light_render.destroy();
 	CParticlesObject::Destroy(m_pFlareParticles);
+#endif
 	processing_deactivate();
 }
 
 void CFlare::DropFlare()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	if (GetState() != eFlareHidden)
 		SwitchState(eFlareDropping);
 }
 
 void CFlare::UpdateCL()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	inherited::UpdateCL();
 
 	if (light_render /* && HudItemData()*/)

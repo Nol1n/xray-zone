@@ -383,6 +383,7 @@ void CBaseMonster::shedule_Update(u32 dt)
 	m_radiation_aura.update_schedule();
 
 	control().update_schedule();
+	CStepManager::update_cpu_footsteps(float(dt) * 0.001f);
 
 	Morale.update_schedule(dt);
 

@@ -132,14 +132,26 @@ CInput::~CInput(void)
 HRESULT CInput::CreateInputDevice(LPDIRECTINPUTDEVICE8* device, GUID guidDevice, const DIDATAFORMAT* pdidDataFormat,
                                   u32 dwFlags, u32 buf_size)
 {
+	const char* deviceName = IsEqualGUID(guidDevice, GUID_SysMouse) ? "mouse" : "keyboard";
+	const auto reportFailure = [deviceName](const char* operation, HRESULT result) {
+		if (FAILED(result))
+			Msg("! INPUT: DirectInput %s %s failed (HRESULT 0x%08lX)", deviceName, operation,
+				static_cast<unsigned long>(result));
+		return result;
+	};
+
 	// Obtain an interface to the input device
 	//. CHK_DX( pDI->CreateDeviceEx( guidDevice, IID_IDirectInputDevice8, (void**)device, NULL ) );
-	CHK_DX(pDI->CreateDevice(guidDevice, /*IID_IDirectInputDevice8,*/ device, NULL));
+	HRESULT result = pDI->CreateDevice(guidDevice, /*IID_IDirectInputDevice8,*/ device, NULL);
+	if (FAILED(result))
+		return reportFailure("CreateDevice", result);
 
 	// Set the device data format. Note: a data format specifies which
 	// controls on a device we are interested in, and how they should be
 	// reported.
-	CHK_DX((*device)->SetDataFormat(pdidDataFormat));
+	result = (*device)->SetDataFormat(pdidDataFormat);
+	if (FAILED(result))
+		return reportFailure("SetDataFormat", result);
 
 	// Set the cooperativity level to let DirectInput know how this device
 	// should interact with the system and with other DirectInput applications.
@@ -149,8 +161,8 @@ HRESULT CInput::CreateInputDevice(LPDIRECTINPUTDEVICE8* device, GUID guidDevice,
 	{
 		HRESULT _hr = (*device)->SetCooperativeLevel(RDEVICE.m_hWnd, dwFlags);
 		if (FAILED(_hr) && (_hr == E_NOTIMPL)) Msg("! INPUT: Can't set coop level. Emulation???");
-		else
-			R_CHK(_hr);
+		else if (FAILED(_hr))
+			return reportFailure("SetCooperativeLevel", _hr);
 	}
 
 	// setup the buffer size for the keyboard data
@@ -161,7 +173,9 @@ HRESULT CInput::CreateInputDevice(LPDIRECTINPUTDEVICE8* device, GUID guidDevice,
 	dipdw.diph.dwHow = DIPH_DEVICE;
 	dipdw.dwData = buf_size;
 
-	CHK_DX((*device)->SetProperty(DIPROP_BUFFERSIZE, &dipdw.diph));
+	result = (*device)->SetProperty(DIPROP_BUFFERSIZE, &dipdw.diph);
+	if (FAILED(result))
+		return reportFailure("SetProperty(DIPROP_BUFFERSIZE)", result);
 
 	return S_OK;
 }

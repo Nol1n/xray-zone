@@ -8,8 +8,9 @@
 const u32 MAX_TRACERS = (1024 * 5);
 const float TRACER_SIZE = 0.13f;
 
-CTracer::CTracer()
+CTracer::CTracer() : m_circle_size_k(0.f), m_tracer_length_k(0.f)
 {
+	#ifndef DEDICATED_SERVER
 	LPCSTR sh_name = pSettings->r_string("bullet_manager", "tracer_shader");
 	LPCSTR tx_name = pSettings->r_string("bullet_manager", "tracer_texture");
 	m_circle_size_k = pSettings->r_float("bullet_manager", "fire_circle_k");
@@ -29,6 +30,7 @@ CTracer::CTracer()
 
 		m_aColors.push_back(clr);
 	};
+	#endif // DEDICATED_SERVER
 }
 
 IC void FillSprite_Circle(const Fvector& pos, const float width, const float length, u32 color)
@@ -121,6 +123,7 @@ void CTracer::Render(const Fvector& pos,
                      float speed,
                      bool bActor)
 {
+	#ifndef DEDICATED_SERVER
 	if (::Render->ViewBase.testSphere_dirty((Fvector&)center, length * .5f))
 	{
 		R_ASSERT(colorID < m_aColors.size());
@@ -136,4 +139,14 @@ void CTracer::Render(const Fvector& pos,
 
 		FillSprite_Line(center, dir, width * .5f, length * .5f * m_tracer_length_k, m_aColors[colorID]);
 	}
+	#else
+	(void)pos;
+	(void)center;
+	(void)dir;
+	(void)length;
+	(void)width;
+	(void)colorID;
+	(void)speed;
+	(void)bActor;
+	#endif // DEDICATED_SERVER
 }

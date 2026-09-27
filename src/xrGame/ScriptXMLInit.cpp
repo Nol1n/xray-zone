@@ -25,6 +25,10 @@
 
 using namespace luabind;
 
+#ifdef DEDICATED_SERVER
+extern ENGINE_API bool g_dedicated_server;
+#endif // DEDICATED_SERVER
+
 void _attach_child(CUIWindow* _child, CUIWindow* _parent)
 {
 	if (!_parent) return;
@@ -55,6 +59,10 @@ LPCSTR clearBOM(LPCSTR s) {
 void XMLLuaCallback(CXml &m_xml, LPCSTR xml_string) {
     if (!xml_string) return;
     if (xr_strlen(xml_string) == 0) return;
+#ifdef DEDICATED_SERVER
+    // The bootstrap server has not started its gameplay Lua runtime yet.
+    if (g_dedicated_server) return;
+#endif // DEDICATED_SERVER
 	xml_string = clearBOM(xml_string);
 	::luabind::functor<LPCSTR> funct;
 	if (ai().script_engine().functor("_G.COnXmlRead", funct))

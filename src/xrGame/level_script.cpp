@@ -69,6 +69,7 @@ using namespace luabind;
 
 extern ENGINE_API float ps_r2_sun_shafts_min;
 extern ENGINE_API float ps_r2_sun_shafts_value;
+extern ENGINE_API bool g_dedicated_server;
 bool g_block_all_except_movement;
 bool g_actor_allow_ladder = true;
 
@@ -433,6 +434,9 @@ Fvector vertex_position(u32 level_vertex_id)
 
 void map_add_object_spot(u16 id, LPCSTR spot_type, LPCSTR text)
 {
+	if (g_dedicated_server)
+		return;
+
 	CMapLocation* ml = Level().MapManager().AddMapLocation(spot_type, id);
 	if (xr_strlen(text))
 	{
@@ -442,6 +446,9 @@ void map_add_object_spot(u16 id, LPCSTR spot_type, LPCSTR text)
 
 void map_add_object_spot_ser(u16 id, LPCSTR spot_type, LPCSTR text)
 {
+	if (g_dedicated_server)
+		return;
+
 	CMapLocation* ml = Level().MapManager().AddMapLocation(spot_type, id);
 	if (xr_strlen(text))
 		ml->SetHint(text);
@@ -451,6 +458,9 @@ void map_add_object_spot_ser(u16 id, LPCSTR spot_type, LPCSTR text)
 
 void map_change_spot_hint(u16 id, LPCSTR spot_type, LPCSTR text)
 {
+	if (g_dedicated_server)
+		return;
+
 	CMapLocation* ml = Level().MapManager().GetMapLocation(spot_type, id);
 	if (!ml) return;
 	ml->SetHint(text);
@@ -458,17 +468,26 @@ void map_change_spot_hint(u16 id, LPCSTR spot_type, LPCSTR text)
 
 void map_remove_object_spot(u16 id, LPCSTR spot_type)
 {
+	if (g_dedicated_server)
+		return;
+
 	Level().MapManager().RemoveMapLocation(spot_type, id);
 }
 
 // demonized: remove all map object spots by id
 void map_remove_all_object_spots(u16 id)
 {
+	if (g_dedicated_server)
+		return;
+
 	Level().MapManager().RemoveAllMapLocationsById(id);
 }
 
 CUIStatic* map_get_spot_static(u16 id, LPCSTR spot_type)
 {
+	if (g_dedicated_server)
+		return nullptr;
+
 	CMapLocation* ml = Level().MapManager().GetMapLocation(spot_type, id);
 	if (!ml) return nullptr;
 	CUIStatic* map_spot_static = ml->LevelMapSpotNC();
@@ -476,6 +495,9 @@ CUIStatic* map_get_spot_static(u16 id, LPCSTR spot_type)
 }
 CUIStatic* map_get_minimap_spot_static(u16 id, LPCSTR spot_type)
 {
+	if (g_dedicated_server)
+		return nullptr;
+
 	CMapLocation* ml = Level().MapManager().GetMapLocation(spot_type, id);
 	if (!ml) return nullptr;
 	CUIStatic* map_spot_static = ml->MiniMapSpotNC();
@@ -485,6 +507,8 @@ CUIStatic* map_get_minimap_spot_static(u16 id, LPCSTR spot_type)
 ::luabind::object map_get_object_spots_by_id(u16 id)
 {
 	::luabind::object table = ::luabind::newtable(ai().script_engine().lua());
+	if (g_dedicated_server)
+		return table;
 
 	auto result = xr_vector<CMapLocation*>();
 	Level().MapManager().GetMapLocations(id, result);
@@ -504,6 +528,9 @@ CUIStatic* map_get_minimap_spot_static(u16 id, LPCSTR spot_type)
 
 u16 map_has_object_spot(u16 id, LPCSTR spot_type)
 {
+	if (g_dedicated_server)
+		return 0;
+
 	return Level().MapManager().HasMapLocation(spot_type, id);
 }
 

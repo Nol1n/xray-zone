@@ -15,6 +15,8 @@ struct str_container_impl
 	static const u32 buffer_size = 1024 * 256;
 	str_value* buffer[buffer_size];
 	int num_docs;
+	u64 entryCount = 0;
+	u64 entryBytes = 0;
 
 	str_container_impl()
 	{
@@ -45,6 +47,8 @@ struct str_container_impl
 		str_value** element = &buffer[value->dwCRC % buffer_size];
 		value->next = *element;
 		*element = value;
+		++entryCount;
+		entryBytes += HEADER + value->dwLength + 1;
 	}
 
 	void clean()
@@ -59,6 +63,8 @@ struct str_container_impl
 				if (!value->dwReference)
 				{
 					*current = value->next;
+					--entryCount;
+					entryBytes -= HEADER + value->dwLength + 1;
 					xr_free(value);
 				}
 				else
@@ -246,6 +252,14 @@ u32 str_container::stat_economy(u32& count)
 	counter += impl->stat_economy(count);
 	cs.Leave();
 	return u32(counter);
+}
+
+void str_container::statistics(u64& entries, u64& storageBytes)
+{
+	cs.Enter();
+	entries = impl->entryCount;
+	storageBytes = sizeof(*impl) + impl->entryBytes;
+	cs.Leave();
 }
 
 str_container::~str_container()

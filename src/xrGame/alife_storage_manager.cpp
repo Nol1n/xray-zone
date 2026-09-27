@@ -8,6 +8,7 @@
 
 #include "stdafx.h"
 #include "alife_storage_manager.h"
+#include "../xrEngine/zone_profiler.h"
 #include "alife_simulator_header.h"
 #include "alife_time_manager.h"
 #include "alife_spawn_registry.h"
@@ -45,6 +46,7 @@ CALifeStorageManager::~CALifeStorageManager()
 
 void CALifeStorageManager::save(LPCSTR save_name_no_check, bool update_name)
 {
+	zone_profiler::Scope profileSavePersistence(zone_profiler::Zone::SavePersistence);
 	PROF_EVENT();
 	LPCSTR game_saves_path = FS.get_path("$game_saves$")->m_Path;
 
@@ -82,29 +84,37 @@ void CALifeStorageManager::save(LPCSTR save_name_no_check, bool update_name)
 	void* dest_data;
 	{
 		CMemoryWriter stream;
-		header().save(stream);
-		time_manager().save(stream);
-		spawns().save(stream);
-		objects().save(stream);
-		registry().save(stream);
+		{
+			zone_profiler::Scope profileSaveSerialize(zone_profiler::Zone::SaveSerialize);
+			header().save(stream);
+			time_manager().save(stream);
+			spawns().save(stream);
+			objects().save(stream);
+			registry().save(stream);
+		}
 
 		source_count = stream.tell();
 		void* source_data = stream.pointer();
 		dest_count = rtc_csize(source_count);
 		dest_data = xr_malloc(dest_count);
-		dest_count = rtc_compress(dest_data, dest_count, source_data, source_count);
+		{
+			zone_profiler::Scope profileSaveCompress(zone_profiler::Zone::SaveCompress);
+			dest_count = rtc_compress(dest_data, dest_count, source_data, source_count);
+		}
 	}
 
 	string_path temp;
 	FS.update_path(temp, "$game_saves$", m_save_name);
-	IWriter* writer = FS.w_open(temp);
-	writer->w_u32(u32(-1));
-	writer->w_u32(ALIFE_VERSION);
-
-	writer->w_u32(source_count);
-	writer->w(dest_data, dest_count);
+	{
+		zone_profiler::Scope profileSaveWrite(zone_profiler::Zone::SaveWrite);
+		IWriter* writer = FS.w_open(temp);
+		writer->w_u32(u32(-1));
+		writer->w_u32(ALIFE_VERSION);
+		writer->w_u32(source_count);
+		writer->w(dest_data, dest_count);
+		FS.w_close(writer);
+	}
 	xr_free(dest_data);
-	FS.w_close(writer);
 #ifdef DEBUG
 	Msg							("* Game %s is successfully saved to file '%s' (%d bytes compressed to %d)",m_save_name,temp,source_count,dest_count + 4);
 #else // DEBUG
@@ -125,6 +135,7 @@ void CALifeStorageManager::save(LPCSTR save_name_no_check, bool update_name)
 
 void CALifeStorageManager::load(void* buffer, const u32& buffer_size, LPCSTR file_name)
 {
+	zone_profiler::Scope profileLoadDeserialize(zone_profiler::Zone::LoadDeserialize);
 	//Alundaio: So we can get the fname to make our own custom save states
 #ifdef ENGINE_LUA_ALIFE_STORAGE_MANAGER_CALLBACKS
 	::luabind::functor<void> funct;
@@ -168,6 +179,7 @@ void CALifeStorageManager::load(void* buffer, const u32& buffer_size, LPCSTR fil
 
 bool CALifeStorageManager::load(LPCSTR save_name_no_check)
 {
+	zone_profiler::Scope profileLoadPersistence(zone_profiler::Zone::LoadPersistence);
 	LPCSTR game_saves_path = FS.get_path("$game_saves$")->m_Path;
 
 	string_path save_name;
@@ -195,7 +207,10 @@ bool CALifeStorageManager::load(LPCSTR save_name_no_check)
 	xr_strcpy(g_bug_report_file, file_name);
 
 	IReader* stream;
-	stream = FS.r_open(file_name);
+	{
+		zone_profiler::Scope profileLoadRead(zone_profiler::Zone::LoadRead);
+		stream = FS.r_open(file_name);
+	}
 	if (!stream)
 	{
 		Msg("* Cannot find saved game %s", file_name);
@@ -217,7 +232,10 @@ bool CALifeStorageManager::load(LPCSTR save_name_no_check)
 
 	u32 source_count = stream->r_u32();
 	void* source_data = xr_malloc(source_count);
-	rtc_decompress(source_data, source_count, stream->pointer(), stream->length() - 3 * sizeof(u32));
+	{
+		zone_profiler::Scope profileLoadDecompress(zone_profiler::Zone::LoadDecompress);
+		rtc_decompress(source_data, source_count, stream->pointer(), stream->length() - 3 * sizeof(u32));
+	}
 	FS.r_close(stream);
 	load(source_data, source_count, file_name);
 	xr_free(source_data);
@@ -243,6 +261,7 @@ void CALifeStorageManager::save(NET_Packet& net_packet)
 
 void CALifeStorageManager::prepare_objects_for_save()
 {
+	zone_profiler::Scope profileSavePrepare(zone_profiler::Zone::SavePrepare);
 	PROF_EVENT();
 	Level().ClientSend();
 	Level().ClientSave();

@@ -17,14 +17,28 @@ extern ENGINE_API BOOL g_bRendering;
 IRenderable::~IRenderable()
 {
 	VERIFY(!g_bRendering);
-	Render->model_Delete(renderable.visual);
-	if (renderable.pROS) Render->ros_destroy(renderable.pROS);
+	if (Render)
+	{
+		if (renderable.visual)
+			Render->model_Delete(renderable.visual);
+		if (renderable.pROS)
+			Render->ros_destroy(renderable.pROS);
+	}
+	else
+	{
+		R_ASSERT3(!renderable.visual && !renderable.pROS,
+		          "Renderable resources outlived their renderer.", "IRenderable::~IRenderable");
+	}
 	renderable.visual = NULL;
 	renderable.pROS = NULL;
 }
 
 IRender_ObjectSpecific* IRenderable::renderable_ROS()
 {
-	if (0 == renderable.pROS && renderable.pROS_Allowed) renderable.pROS = Render->ros_create(this);
+	if (!Render)
+		return nullptr;
+
+	if (0 == renderable.pROS && renderable.pROS_Allowed)
+		renderable.pROS = Render->ros_create(this);
 	return renderable.pROS;
 }

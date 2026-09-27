@@ -20,7 +20,7 @@ BOOL CCF_DynamicMesh::_RayQuery(const collide::ray_defs& Q, collide::rq_results&
 
 	VERIFY(owner);
 	VERIFY(owner->Visual());
-	IKinematics* K = owner->Visual()->dcast_PKinematics();
+	IKinematics* K = owner->GetKinematics();
 
 	struct spick
 	{

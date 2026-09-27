@@ -12,10 +12,15 @@
 #include "ai_space.h"
 #include "../xrEngine/IGame_Persistent.h"
 #include "script_engine.h"
+#ifndef DEDICATED_SERVER
 #include "mainmenu.h"
+#endif // DEDICATED_SERVER
 #include "object_factory.h"
 #include "alife_object_registry.h"
 #include "../xrEngine/xr_ioconsole.h"
+#ifdef DEDICATED_SERVER
+#include "../xrEngine/DedicatedServer.h"
+#endif // DEDICATED_SERVER
 
 #ifdef DEBUG
 #	include "moving_objects.h"
@@ -30,10 +35,27 @@ void restart_all()
 	if (strstr(Core.Params, "-keep_lua"))
 		return;
 
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("ALife restart: destroying Lua weapon parameters");
+	#endif // DEDICATED_SERVER
 	destroy_lua_wpn_params();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("ALife restart: Lua weapon parameters destroyed");
+	#endif // DEDICATED_SERVER
+#ifndef DEDICATED_SERVER
 	MainMenu()->DestroyInternal(true);
+#endif // DEDICATED_SERVER
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("ALife restart: deleting object factory");
+	#endif // DEDICATED_SERVER
 	xr_delete(g_object_factory);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("ALife restart: initializing script engine");
+	#endif // DEDICATED_SERVER
 	ai().script_engine().init();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("ALife restart: script engine initialized");
+	#endif // DEDICATED_SERVER
 
 #ifdef DEBUG
 	ai().moving_objects().clear	();
@@ -45,11 +67,20 @@ CALifeSimulator::CALifeSimulator(xrServer* server, shared_str* command_line) :
 	CALifeInteractionManager(server, alife_section),
 	CALifeSimulatorBase(server, alife_section)
 {
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("ALife simulator constructor body entered");
+	#endif // DEDICATED_SERVER
 	restart_all();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("ALife simulator Lua state restarted");
+	#endif // DEDICATED_SERVER
 
 	ai().set_alife(this);
 
 	setup_command_line(command_line);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("ALife simulator command line configured");
+	#endif // DEDICATED_SERVER
 
 	typedef IGame_Persistent::params params;
 	params& p = g_pGamePersistent->m_game_params;
@@ -60,6 +91,9 @@ CALifeSimulator::CALifeSimulator(xrServer* server, shared_str* command_line) :
 		!xr_strcmp(p.m_game_type,"single"),
 		"Invalid server options!"
 	);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("ALife simulator server options validated");
+	#endif // DEDICATED_SERVER
 
 	string256 temp;
 	xr_strcpy(temp, p.m_game_or_spawn);
@@ -68,13 +102,29 @@ CALifeSimulator::CALifeSimulator(xrServer* server, shared_str* command_line) :
 	xr_strcat(temp, "/");
 	xr_strcat(temp, p.m_alife);
 	*command_line = temp;
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("ALife simulator normalized server options");
+	#endif // DEDICATED_SERVER
 
 	LPCSTR start_game_callback = pSettings->r_string(alife_section, "start_game_callback");
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("ALife simulator start callback name loaded");
+	#endif // DEDICATED_SERVER
 	::luabind::functor<void> functor;
 	R_ASSERT2(ai().script_engine().functor(start_game_callback,functor), "failed to get start game callback");
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("ALife simulator start callback resolved");
+	#endif // DEDICATED_SERVER
 	functor();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("ALife simulator start callback completed");
+	TraceDedicatedServerBootstrap("ALife simulator loading level database");
+	#endif // DEDICATED_SERVER
 
 	load(p.m_game_or_spawn, !xr_strcmp(p.m_new_or_load, "load") ? false : true, !xr_strcmp(p.m_new_or_load, "new"));
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("ALife simulator level database loaded");
+	#endif // DEDICATED_SERVER
 }
 
 CALifeSimulator::~CALifeSimulator()

@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "xrSheduler.h"
+#include "zone_profiler.h"
 #include "xr_object.h"
 
 //#define DEBUG_SCHEDULER
@@ -441,12 +442,16 @@ SwitchToFiber (fiber_main);
 */
 void CSheduler::Update()
 {
+	zone_profiler::Scope profileScheduler(zone_profiler::Zone::Scheduler);
 	R_ASSERT(Device.Statistic);
 	// Initialize
 	Device.Statistic->Sheduler.Begin();
 	cycles_start = CPU::QPC();
 	cycles_limit = CPU::qpc_freq * u64(iCeil(psShedulerCurrent)) / 1000i64 + cycles_start;
-	internal_Registration();
+	{
+		zone_profiler::Scope profileRegistration(zone_profiler::Zone::SchedulerRegistration);
+		internal_Registration();
+	}
 	g_bSheduleInProgress = TRUE;
 
 #ifdef DEBUG_SCHEDULER
@@ -454,6 +459,8 @@ void CSheduler::Update()
 #endif // DEBUG_SCHEDULER
 	// Realtime priority
 	m_processing_now = true;
+	{
+	zone_profiler::Scope profileRealtime(zone_profiler::Zone::SchedulerRealtime);
 	u32 dwTime = Device.dwTimeGlobal;
 	for (u32 it = 0; it < ItemsRT.size(); it++)
 	{
@@ -479,9 +486,13 @@ void CSheduler::Update()
 		T.Object->shedule_Update(Elapsed);
 		T.dwTimeOfLastExecute = dwTime;
 	}
+	}
 
 	// Normal (sheduled)
-	ProcessStep();
+	{
+		zone_profiler::Scope profileNormal(zone_profiler::Zone::SchedulerNormal);
+		ProcessStep();
+	}
 	m_processing_now = false;
 #ifdef DEBUG_SCHEDULER
     Msg("SCHEDULER: PROCESS STEP FINISHED %d", Device.dwFrame);
@@ -492,6 +503,9 @@ void CSheduler::Update()
 
 	// Finalize
 	g_bSheduleInProgress = FALSE;
-	internal_Registration();
+	{
+		zone_profiler::Scope profileRegistration(zone_profiler::Zone::SchedulerRegistration);
+		internal_Registration();
+	}
 	Device.Statistic->Sheduler.End();
 }

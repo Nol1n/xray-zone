@@ -18,6 +18,8 @@
 #include "inventory.h"
 #include "smart_cover.h"
 #include "huditem.h"
+#include "../xrEngine/object_collision_pose.h"
+#include "../xrEngine/SkeletonMotions.h"
 
 float g_smart_cover_animation_speed_factor = 1.f;
 
@@ -32,7 +34,6 @@ animation_selector::animation_selector(CAI_Stalker* object) :
 	m_previous_time(flt_max)
 {
 	m_skeleton_animated = smart_cast<IKinematicsAnimated*>(object->Visual());
-	VERIFY(m_skeleton_animated);
 	m_planner = xr_new<animation_planner>(object, "animation planner");
 }
 
@@ -56,7 +57,8 @@ void animation_selector::initialize()
 	// and we will have 
 	// VERIFY	(*parameter->m_blend);
 	m_callback_called = true;
-	m_object->animation().update();
+	if (m_skeleton_animated)
+		m_object->animation().update();
 
 	m_first_time = true;
 }
@@ -74,6 +76,18 @@ action_base* animation_selector::current_operator() const
 	return (&smart_cast<smart_cover::action_base&>(m_planner->current_action()));
 }
 
+bool animation_selector::find_cycle(LPCSTR name, MotionID& result) const
+{
+	if (m_skeleton_animated)
+	{
+		result = m_skeleton_animated->ID_Cycle(name);
+		return result.valid();
+	}
+
+	IObjectCollisionPose* pose = m_object->CollisionPose();
+	return pose && pose->find_cycle(name, result);
+}
+
 MotionID animation_selector::select_animation(bool& animation_movement_controller)
 {
 	animation_movement_controller = true;
@@ -89,7 +103,7 @@ MotionID animation_selector::select_animation(bool& animation_movement_controlle
 			if (!m_planner->initialized())
 			{
 				//				Msg				("%6d no planner update, planner is not initialized, exiting", Device.dwTimeGlobal);
-				return (m_object->animation().assign_global_animation(animation_movement_controller));
+				return (m_object->animation().assign_default_global_animation(animation_movement_controller));
 			}
 		}
 
@@ -99,18 +113,21 @@ MotionID animation_selector::select_animation(bool& animation_movement_controlle
 		if (!m_planner->initialized())
 		{
 			//			Msg				("%6d planner is not initialized after update, exiting", Device.dwTimeGlobal);
-			return (m_object->animation().assign_global_animation(animation_movement_controller));
+			return (m_object->animation().assign_default_global_animation(animation_movement_controller));
 		}
 
 		current_operator()->on_no_mark();
 		if (!current_operator()->is_animated_action())
-			return (m_object->animation().assign_global_animation(animation_movement_controller));
+			return (m_object->animation().assign_default_global_animation(animation_movement_controller));
 
 		current_operator()->select_animation(m_animation);
 
 		VERIFY(m_object->movement().current_params().cover());
 		if (!m_object->movement().current_params().cover()->can_fire())
-			return (m_skeleton_animated->ID_Cycle(m_animation.c_str()));
+		{
+			MotionID selected;
+			return find_cycle(m_animation.c_str(), selected) ? selected : MotionID();
+		}
 
 #if 0//ndef MASTER_GOLD
 		if (!psAI_Flags.test((u32)aiUseSmartCoversAnimationSlot))
@@ -135,13 +152,19 @@ MotionID animation_selector::select_animation(bool& animation_movement_controlle
 		VERIFY				(animation_id);
 		return				(animation_id);
 #else // #ifndef MASTER_GOLD
-		return (m_skeleton_animated->ID_Cycle(m_animation.c_str()));
+		MotionID selected;
+		return find_cycle(m_animation.c_str(), selected) ? selected : MotionID();
 #endif // #ifndef MASTER_GOLD
 	}
 
 	VERIFY(m_animation._get());
 	//	VERIFY				(m_first_time || m_object->animation().global().blend());
-	MotionID result = m_skeleton_animated->ID_Cycle(m_animation.c_str());
+	MotionID result;
+	if (!find_cycle(m_animation.c_str(), result))
+	{
+		current_operator()->on_no_mark();
+		return MotionID();
+	}
 	if (m_first_time)
 	{
 		m_first_time = false;
@@ -150,33 +173,63 @@ MotionID animation_selector::select_animation(bool& animation_movement_controlle
 		return (result);
 	}
 
-	CBlend const* const blend = m_object->animation().global().blend();
-	if (!blend)
+	float time_current = 0.f;
+	bool state_found = false;
+	if (m_skeleton_animated)
+	{
+		CBlend const* const blend = m_object->animation().global().blend();
+		if (blend)
+		{
+			VERIFY(blend->motionID == result);
+			time_current = blend->timeCurrent;
+			state_found = true;
+		}
+	}
+	else
+	{
+		IObjectCollisionPose* pose = m_object->CollisionPose();
+		SMotionPlaybackState states[MAX_CHANNELS * MAX_BLENDED];
+		int state_count = 0;
+		if (pose && pose->get_motion_playback_states(states, MAX_CHANNELS * MAX_BLENDED, state_count))
+		{
+			for (int i = 0; i < state_count; ++i)
+			{
+				if (states[i].controller_group == 3 && states[i].id == result)
+				{
+					time_current = states[i].time_current;
+					state_found = true;
+					break;
+				}
+			}
+		}
+	}
+	if (!state_found)
 	{
 		m_previous_time = 0.f;
 		current_operator()->on_no_mark();
-		return (result);
-	}
-
-	VERIFY(blend->motionID == result);
-	CMotionDef* motion_def = m_skeleton_animated->LL_GetMotionDef(result);
-
-	typedef xr_vector<motion_marks> Marks;
-	Marks const& marks = motion_def->marks;
-	if (marks.size() < 3)
-	{
-		current_operator()->on_no_mark();
-		return (result);
+		return result;
 	}
 
 	float previous_time = m_previous_time;
-	float time_current = blend->timeCurrent + .1f;
+	time_current += .1f;
 	m_previous_time = time_current;
 	// Slipch told me, that timeCurrent can decrease (setup to 0.f) during animation playing
 	// therefore we need here to clamp previous value
 	clamp(previous_time, 0.f, time_current);
-	// first 2 should be footsteps
-	if (!marks[2].is_mark_between(previous_time, time_current))
+	// The first two marks are footsteps; smart-cover actions start at mark 2.
+	bool mark_found = false;
+	if (m_skeleton_animated)
+	{
+		CMotionDef* motion_def = m_skeleton_animated->LL_GetMotionDef(result);
+		mark_found = motion_def && motion_def->marks.size() >= 3 &&
+			motion_def->marks[2].is_mark_between(previous_time, time_current);
+	}
+	else
+	{
+		IObjectCollisionPose* pose = m_object->CollisionPose();
+		mark_found = pose && pose->motion_mark_between(result, 2, previous_time, time_current);
+	}
+	if (!mark_found)
 	{
 		current_operator()->on_no_mark();
 		return (result);
@@ -195,7 +248,7 @@ void animation_selector::on_animation_end()
 
 void animation_selector::modify_animation(CBlend* blend)
 {
-	if (!blend)
+	if (!blend || !m_skeleton_animated)
 		return;
 
 	CMotionDef* motion_def = m_skeleton_animated->LL_GetMotionDef(blend->motionID);

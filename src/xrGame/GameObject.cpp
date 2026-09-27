@@ -57,7 +57,9 @@ CGameObject::CGameObject()
 	m_bCrPr_Activated = false;
 	m_dwCrPr_ActivationStep = 0;
 	m_spawn_time = 0;
-	m_ai_location = !g_dedicated_server ? xr_new<CAI_ObjectLocation>() : 0;
+	// AI locations are simulation state, not renderer state. Dedicated servers
+	// still need them when spawned entities are assigned graph vertices.
+	m_ai_location = xr_new<CAI_ObjectLocation>();
 	m_server_flags.one();
 
 	m_callbacks = xr_new<CALLBACK_MAP>();
@@ -99,8 +101,7 @@ void CGameObject::Load(LPCSTR section)
 void CGameObject::reinit()
 {
 	m_visual_callback.clear();
-	if (!g_dedicated_server)
-		ai_location().reinit();
+	ai_location().reinit();
 
 	// clear callbacks	
 	for (CALLBACK_MAP_IT it = m_callbacks->begin(); it != m_callbacks->end(); ++it) it->second.clear();
@@ -279,6 +280,11 @@ BOOL CGameObject::net_Spawn(CSE_Abstract* DC)
 	{
 		auto visualName = visual_name(E);
 
+	#ifdef DEDICATED_SERVER
+		// The dedicated target keeps the server-side visual name for network and
+		// configuration metadata, but has no renderer model registry to query.
+		cNameVisual_set(visualName);
+	#else
 		// If model doesn't exist, and object config has "visual" field, try to update the model
 		if(!Render->models_Exists(visualName) && pSettings->line_exist(cNameSect(), "visual")) {
 			auto visualFromSec = pSettings->r_string(cNameSect(), "visual");
@@ -289,6 +295,7 @@ BOOL CGameObject::net_Spawn(CSE_Abstract* DC)
 		else {
 			cNameVisual_set(visualName);
 		}
+	#endif
 
 		if (visual->flags.test(CSE_Visual::flObstacle))
 		{
@@ -747,15 +754,20 @@ void			CGameObject::dbg_DrawSkeleton	()
 
 void CGameObject::renderable_Render()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#else
 	inherited::renderable_Render();
 	::Render->set_Transform(&XFORM());
 	::Render->add_Visual(Visual());
 	Visual()->getVisData().hom_frame = Device.dwFrame;
 	RenderAttachments();
+#endif
 }
 
 void CGameObject::RenderAttachments()
 {
+#ifndef DEDICATED_SERVER
 	if (m_script_attachments.size())
 	{
 		for (auto& pair : m_script_attachments)
@@ -772,6 +784,7 @@ void CGameObject::RenderAttachments()
 			}
 		}
 	}
+#endif
 }
 
 //#define DEBUG_VISBOX

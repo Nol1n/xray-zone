@@ -244,6 +244,8 @@ void CStalkerAnimationManager::update_impl()
 
 void CStalkerAnimationManager::update()
 {
+	if (!m_skeleton_animated || !m_data_storage)
+		return;
 	START_PROFILE("stalker/client_update/animations")
 		try
 		{

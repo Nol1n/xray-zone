@@ -126,3 +126,8 @@ IC void CStalkerAnimationPair::target_matrix(Fmatrix const& matrix)
 	m_target_matrix_impl = matrix;
 	m_target_matrix = &m_target_matrix_impl;
 }
+
+IC Fmatrix const* CStalkerAnimationPair::target_matrix_ptr() const
+{
+	return m_target_matrix;
+}

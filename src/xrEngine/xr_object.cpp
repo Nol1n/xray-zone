@@ -14,6 +14,8 @@
 
 #include "mp_logging.h"
 #include "xr_collide_form.h"
+#include "object_collision_pose.h"
+#include "cpu_rigid_collision_pose.h"
 
 #pragma warning(push)
 #pragma warning(disable:4995)
@@ -71,7 +73,25 @@ void CObject::cNameVisual_set(shared_str N)
 {
 	// check if equal
 	if (*N && *NameVisual)
-		if (N == NameVisual) return;
+		if (N == NameVisual && (renderable.visual || !Render)) return;
+
+	if (!Render)
+	{
+		if (renderable.visual || renderable.pROS)
+		{
+			R_ASSERT3(false, "Cannot replace or release live render resources without a renderer.", *cName());
+			return;
+		}
+
+		if (*N)
+			NameVisual = N;
+		else
+			NameVisual = 0;
+		OnChangeVisual();
+		if (spatial.node_ptr)
+			spatial_move();
+		return;
+	}
 
 	// replace model
 	if (*N && N[0])
@@ -80,9 +100,9 @@ void CObject::cNameVisual_set(shared_str N)
 
 		NameVisual = N;
 		renderable.visual = Render->model_Create(*N);
+		IKinematics* new_k = renderable.visual->dcast_PKinematics();
 
 		IKinematics* old_k = old_v ? old_v->dcast_PKinematics() : NULL;
-		IKinematics* new_k = renderable.visual->dcast_PKinematics();
 
 		/*
 		if(old_k && new_k){
@@ -105,7 +125,8 @@ void CObject::cNameVisual_set(shared_str N)
 			new_k->SetUpdateCallbackParam(old_k->GetUpdateCallbackParam());
 		}
 
-		::Render->model_Delete(old_v);
+		if (old_v)
+			Render->model_Delete(old_v);
 	}
 	else
 	{
@@ -119,10 +140,44 @@ void CObject::cNameVisual_set(shared_str N)
 		}
 #endif
 
-		::Render->model_Delete(renderable.visual);
+		if (renderable.visual)
+			Render->model_Delete(renderable.visual);
 		NameVisual = 0;
 	}
 	OnChangeVisual();
+	if (spatial.node_ptr)
+		spatial_move();
+}
+
+IKinematics* CObject::GetKinematics() const
+{
+	return renderable.visual ? renderable.visual->dcast_PKinematics() : nullptr;
+}
+
+IObjectCollisionPose* CObject::CollisionPose() const
+{
+	if (m_collision_pose)
+		return m_collision_pose;
+
+	IKinematics* kinematics = GetKinematics();
+	return kinematics ? kinematics->dcast_CollisionPose() : nullptr;
+}
+
+void CObject::SetCollisionPoseProvider(IObjectCollisionPose* pose)
+{
+	if (m_collision_pose == pose)
+		return;
+	if (m_owned_collision_pose && m_owned_collision_pose != pose)
+	{
+		if (m_collision_pose == m_owned_collision_pose)
+			m_collision_pose = nullptr;
+		xr_delete(m_owned_collision_pose);
+		m_owned_collision_pose = nullptr;
+	}
+
+	m_collision_pose = pose;
+	if (spatial.node_ptr)
+		spatial_move();
 }
 
 // flagging
@@ -172,24 +227,53 @@ void CObject::setVisible(BOOL _visible)
 //void CObject::Center (Fvector& C) const { VERIFY2(renderable.visual,*cName()); renderable.xform.transform_tiny(C,renderable.visual->vis.sphere.P); }
 void CObject::Center(Fvector& C) const
 {
-	VERIFY2(renderable.visual, *cName());
+	if (IObjectCollisionPose* pose = CollisionPose())
+	{
+		renderable.xform.transform_tiny(C, pose->bounds_sphere().P);
+		return;
+	}
+
 	if (renderable.visual)
+	{
 		renderable.xform.transform_tiny(C, renderable.visual->getVisData().sphere.P);
+		return;
+	}
+
+	VERIFY2(collidable.model, "Object has neither a visual nor CPU collision bounds");
+	if (collidable.model)
+	{
+		renderable.xform.transform_tiny(C, collidable.model->getSphere().P);
+		return;
+	}
+
+	C.set(renderable.xform.c);
 }
 
 //float CObject::Radius () const { VERIFY2(renderable.visual,*cName()); return renderable.visual->vis.sphere.R; }
 float CObject::Radius() const
 {
-	VERIFY2(renderable.visual, *cName());
-	return renderable.visual ? renderable.visual->getVisData().sphere.R : 0.0f;
+	if (IObjectCollisionPose* pose = CollisionPose())
+		return pose->bounds_sphere().R;
+
+	if (renderable.visual)
+		return renderable.visual->getVisData().sphere.R;
+
+	VERIFY2(collidable.model, "Object has neither a visual nor CPU collision bounds");
+	return collidable.model ? collidable.model->getRadius() : 0.0f;
 }
 
 //const Fbox& CObject::BoundingBox () const { VERIFY2(renderable.visual,*cName()); return renderable.visual->vis.box; }
 const Fbox& CObject::BoundingBox() const
 {
 	static const Fbox NULL_BOX = Fbox{}.null();
-	VERIFY2(renderable.visual, *cName());
-	return renderable.visual ? renderable.visual->getVisData().box : NULL_BOX;
+	if (IObjectCollisionPose* pose = CollisionPose())
+		return pose->bounds_box();
+
+	if (renderable.visual)
+		return renderable.visual->getVisData().box;
+
+	VERIFY2(collidable.model, "Object has neither a visual nor CPU collision bounds");
+	return collidable.model ? collidable.model->getBBox() : NULL_BOX;
 }
 
 //----------------------------------------------------------------------
@@ -209,6 +293,8 @@ CObject::CObject() :
 	NameObject = NULL;
 	NameSection = NULL;
 	NameVisual = NULL;
+	m_collision_pose = nullptr;
+	m_owned_collision_pose = nullptr;
 
 #ifdef CBULLETMANAGER_EX
     BulletCheckVisual = false;
@@ -223,6 +309,9 @@ CObject::CObject() :
 CObject::~CObject()
 {
 	cNameVisual_set(0);
+	if (m_collision_pose == m_owned_collision_pose)
+		m_collision_pose = nullptr;
+	xr_delete(m_owned_collision_pose);
 	cName_set(0);
 	cNameSect_set(0);
 }
@@ -245,6 +334,21 @@ void CObject::Load(LPCSTR section)
 
 		cNameVisual_set(tmp);
 	}
+
+	if (m_owned_collision_pose)
+	{
+		if (m_collision_pose == m_owned_collision_pose)
+			m_collision_pose = nullptr;
+		xr_delete(m_owned_collision_pose);
+		m_owned_collision_pose = nullptr;
+	}
+	if (!Render && !CollisionPose() && pSettings->line_exist(section, "cform") && *NameVisual)
+	{
+		CObjectList* object_list = g_pGameLevel ? &g_pGameLevel->Objects : nullptr;
+		m_owned_collision_pose = CreateCpuCollisionPoseFromOGF(*NameVisual, object_list);
+		if (m_owned_collision_pose)
+			SetCollisionPoseProvider(m_owned_collision_pose);
+	}
 	setVisible(false);
 
 #ifdef CBULLETMANAGER_EX
@@ -265,7 +369,7 @@ BOOL CObject::net_Spawn(CSE_Abstract* data)
 	{
 		if (pSettings->line_exist(cNameSect(), "cform"))
 		{
-			R_ASSERT3(*NameVisual, "Model isn't assigned for object, but cform requisted", *cName());
+			R_ASSERT3(CollisionPose(), "Object has cform but no collision-pose provider", *cName());
 			collidable.model = xr_new<CCF_Skeleton>(this);
 		}
 	}
@@ -399,6 +503,8 @@ void CObject::shedule_Update(u32 T)
 	// consistency check
 	// Msg ("-SUB-:[%x][%s] CObject::shedule_Update",fast_dynamic_cast<void*>(this),*cName());
 	ISheduled::shedule_Update(T);
+	if (IObjectCollisionPose* pose = CollisionPose())
+		pose->advance_motion_playback(float(T) * 0.001f);
 	spatial_update(base_spu_epsP * 1, base_spu_epsR * 1);
 
 	// Always make me crow on shedule-update

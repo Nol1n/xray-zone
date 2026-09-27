@@ -4,6 +4,8 @@
 #pragma once
 
 const u32 MAX_PARTS = 4;
+const u32 MAX_BLENDED = 16;
+const u32 MAX_CHANNELS = 4;
 
 const f32 SAMPLE_FPS = 30.f;
 const f32 SAMPLE_SPF = (1.f / SAMPLE_FPS);

@@ -18,6 +18,7 @@
 #include "../Include/xrRender/RenderVisual.h"
 //#include "CalculateTriangle.h"
 #include "actor.h"
+#include "../xrEngine/object_collision_pose.h"
 #ifdef DEBUG
 #include "PHDebug.h"
 #include "game_base_space.h"
@@ -61,8 +62,10 @@ void CCustomRocket::reinit()
 	inherited::reinit();
 
 	m_pTrailLight.destroy();
+	#ifndef DEDICATED_SERVER
 	m_pTrailLight = ::Render->light_create();
 	m_pTrailLight->set_shadow(true);
+	#endif
 
 	m_pEngineParticles = NULL;
 	m_pFlyParticles = NULL;
@@ -145,7 +148,13 @@ void CCustomRocket::create_physic_shell()
 {
 	R_ASSERT(!m_pPhysicsShell);
 	Fobb obb;
-	Visual()->getVisData().box.get_CD(obb.m_translate, obb.m_halfsize);
+	if (IObjectCollisionPose* pose = CollisionPose())
+		pose->bounds_box().get_CD(obb.m_translate, obb.m_halfsize);
+	else
+	{
+		obb.m_translate.set(0.f, 0.f, 0.f);
+		obb.m_halfsize.set(0.1f, 0.1f, 0.4f);
+	}
 	obb.m_rotate.identity();
 
 	// Physics (Elements)
@@ -525,6 +534,9 @@ void CCustomRocket::UpdateEngine()
 //////////////////////////////////////////////////////////////////////////
 void CCustomRocket::StartLights()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	if (!m_bLightsEnabled) return;
 
 	//включить световую подсветку от двигателя
@@ -539,12 +551,18 @@ void CCustomRocket::StartLights()
 
 void CCustomRocket::StopLights()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	if (!m_bLightsEnabled) return;
 	m_pTrailLight->set_active(false);
 }
 
 void CCustomRocket::UpdateLights()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	if (!m_bLightsEnabled || !m_pTrailLight->get_active()) return;
 	m_pTrailLight->set_position(Position());
 }

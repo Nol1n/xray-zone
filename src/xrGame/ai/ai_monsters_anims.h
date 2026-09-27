@@ -9,6 +9,7 @@
 #pragma once
 
 #include "../../Include/xrRender/KinematicsAnimated.h"
+#include "../../xrEngine/object_collision_pose.h"
 #include "../ai_debug.h"
 
 DEFINE_VECTOR(MotionID, ANIM_VECTOR, ANIM_IT);
@@ -19,6 +20,23 @@ public:
 	ANIM_VECTOR A;
 
 	void Load(IKinematicsAnimated* tpKinematics, LPCSTR caBaseName);
+	void Load(IObjectCollisionPose* pose, LPCSTR base_name)
+	{
+		A.clear();
+		string256 name;
+		string256 index;
+		MotionID motion;
+		for (int i = 0; ; ++i)
+		{
+			strconcat(sizeof(name), name, base_name, itoa(i, index, 10));
+			if (pose->find_cycle(name, motion) || pose->find_fx(name, motion))
+				A.push_back(motion);
+			else if (i < 10)
+				continue;
+			else
+				break;
+		}
+	}
 };
 
 template <LPCSTR caBaseNames[]>
@@ -44,6 +62,21 @@ public:
 #endif
 		}
 	}
+
+	IC void Load(IObjectCollisionPose* pose, LPCSTR base_name)
+	{
+		A.clear();
+		string256 name;
+		int count = 0;
+		for (; caBaseNames[count]; ++count);
+		A.resize(count);
+		for (int i = 0; i < count; ++i)
+		{
+			strconcat(sizeof(name), name, base_name, caBaseNames[i]);
+			A[i].invalidate();
+			pose->find_cycle(name, A[i]);
+		}
+	}
 };
 
 template <class TYPE_NAME, LPCSTR caBaseNames[]>
@@ -61,5 +94,16 @@ public:
 		A.resize(j);
 		for (int i = 0; i < j; ++i)
 			A[i].Load(tpKinematics, strconcat(sizeof(S), S, caBaseName, caBaseNames[i]));
+	}
+
+	IC void Load(IObjectCollisionPose* pose, LPCSTR base_name)
+	{
+		A.clear();
+		string256 name;
+		int count = 0;
+		for (; caBaseNames[count]; ++count);
+		A.resize(count);
+		for (int i = 0; i < count; ++i)
+			A[i].Load(pose, strconcat(sizeof(name), name, base_name, caBaseNames[i]));
 	}
 };

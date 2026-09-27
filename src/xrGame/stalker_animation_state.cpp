@@ -34,3 +34,12 @@ void CStalkerAnimationState::Load(IKinematicsAnimated* kinematics, LPCSTR base_n
 	m_movement.Load(kinematics, base_name);
 	m_in_place->Load(kinematics, base_name);
 }
+
+void CStalkerAnimationState::Load(IObjectCollisionPose* pose, LPCSTR base_name)
+{
+	string256 buffer;
+	m_global.Load(pose, base_name);
+	m_torso.Load(pose, strconcat(sizeof(buffer), buffer, base_name, "torso_"));
+	m_movement.Load(pose, base_name);
+	m_in_place->Load(pose, base_name);
+}

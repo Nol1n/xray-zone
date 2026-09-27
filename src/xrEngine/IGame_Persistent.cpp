@@ -2,6 +2,9 @@
 #pragma hdrstop
 
 #include "IGame_Persistent.h"
+#ifdef DEDICATED_SERVER
+#include "DedicatedServer.h"
+#endif // DEDICATED_SERVER
 
 #ifndef _EDITOR
 #include "environment.h"
@@ -107,13 +110,24 @@ void IGame_Persistent::OnAppStart()
 
 void IGame_Persistent::OnAppEnd()
 {
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("base persistent app end entered");
+#endif // DEDICATED_SERVER
 #ifndef _EDITOR
 	Environment().unload();
 #endif
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("base persistent environment unloaded");
+#endif // DEDICATED_SERVER
 	OnGameEnd();
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("base persistent game end completed");
+#endif // DEDICATED_SERVER
 
 #ifndef _EDITOR
+	#ifndef DEDICATED_SERVER
 	DEL_INSTANCE(g_hud);
+	#endif // DEDICATED_SERVER
 #endif
 }
 
@@ -167,10 +181,12 @@ void IGame_Persistent::Disconnect()
 void IGame_Persistent::OnGameStart()
 {
 #ifndef _EDITOR
+	#ifndef DEDICATED_SERVER
 	// LoadTitle("st_prefetching_objects");
 	LoadTitle();
 	if (!strstr(Core.Params, "-noprefetch"))
 		Prefetch();
+	#endif // DEDICATED_SERVER
 #endif
 }
 
@@ -257,7 +273,9 @@ void IGame_Persistent::OnGameEnd()
 {
 #ifndef _EDITOR
 	ObjectPool.clear();
+	#ifndef DEDICATED_SERVER
 	Render->models_Clear(TRUE);
+	#endif // DEDICATED_SERVER
 #endif
 }
 

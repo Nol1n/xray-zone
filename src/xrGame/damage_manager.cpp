@@ -12,6 +12,9 @@
 #include "../xrEngine/xr_object.h"
 #include "../Include/xrRender/Kinematics.h"
 #include "../xrEngine/bone.h"
+#ifdef DEDICATED_SERVER
+#include "../xrEngine/object_collision_pose.h"
+#endif
 
 CDamageManager::CDamageManager()
 {
@@ -67,6 +70,22 @@ void CDamageManager::reload(LPCSTR section, LPCSTR line, CInifile const* ini)
 
 void CDamageManager::init_bones(LPCSTR section, CInifile const* ini)
 {
+#ifdef DEDICATED_SERVER
+	(void)section;
+	(void)ini;
+	m_cpu_bone_damage_params.clear();
+	if (IObjectCollisionPose* pose = m_object->CollisionPose())
+	{
+		m_cpu_bone_damage_params.resize(pose->bone_count());
+		for (SCpuBoneDamageParams& params : m_cpu_bone_damage_params)
+		{
+			params.hit_scale = m_default_hit_factor;
+			params.wound_scale = m_default_wound_factor;
+			params.aim_hit_scale = m_default_hit_factor;
+		}
+	}
+	return;
+#endif
 	IKinematics* kinematics = smart_cast<IKinematics*>(m_object->Visual());
 	VERIFY(kinematics);
 	for (u16 i = 0; i < kinematics->LL_BoneCount(); i++)
@@ -81,6 +100,36 @@ void CDamageManager::init_bones(LPCSTR section, CInifile const* ini)
 void CDamageManager::load_section(LPCSTR section, CInifile const* ini)
 {
 	string32 buffer;
+#ifdef DEDICATED_SERVER
+	IObjectCollisionPose* pose = m_object->CollisionPose();
+	if (!pose)
+		return;
+
+	CInifile::Sect& damages = ini->r_section(section);
+	for (CInifile::SectCIt i = damages.Data.begin(); damages.Data.end() != i; ++i)
+	{
+		if (!xr_strcmp(*(*i).first, "default"))
+			continue;
+
+		const u16 bone = pose->bone_id(i->first.c_str());
+		if (bone == u16(-1) || bone >= m_cpu_bone_damage_params.size())
+			Debug.fatal(DEBUG_INFO, "!CDamageManager::load_section ERROR: unknown CPU bone, section %s, bone %s", section, i->first.c_str());
+
+		SCpuBoneDamageParams& params = m_cpu_bone_damage_params[bone];
+		params.hit_scale = static_cast<float>(atof(_GetItem(*(*i).second, 0, buffer)));
+		params.wound_scale = static_cast<float>(atof(_GetItem(*(*i).second, 2, buffer)));
+		params.aim_hit_scale = _GetItemCount(*(*i).second) < 4
+			? params.hit_scale
+			: static_cast<float>(atof(_GetItem(*(*i).second, 3, buffer)));
+		if (bone == 0 && (fis_zero(params.hit_scale) || fis_zero(params.wound_scale)))
+		{
+			string256 error_str;
+			xr_sprintf(error_str, "hit_scale and wound_scale for root bone cannot be zero. see section [%s]", section);
+			R_ASSERT2(0, error_str);
+		}
+	}
+	return;
+#else
 	IKinematics* kinematics = smart_cast<IKinematics*>(m_object->Visual());
 	CInifile::Sect& damages = ini->r_section(section);
 	for (CInifile::SectCIt i = damages.Data.begin(); damages.Data.end() != i; ++i)
@@ -113,11 +162,25 @@ void CDamageManager::load_section(LPCSTR section, CInifile const* ini)
 			}
 		}
 	}
+#endif
 }
 
 
 void CDamageManager::HitScale(const int element, float& hit_scale, float& wound_scale, bool aim_bullet)
 {
+#ifdef DEDICATED_SERVER
+	if (element < 0 || static_cast<u16>(element) == u16(-1) || element >= static_cast<int>(m_cpu_bone_damage_params.size()))
+	{
+		hit_scale = m_default_hit_factor;
+		wound_scale = m_default_wound_factor;
+		return;
+	}
+
+	const SCpuBoneDamageParams& params = m_cpu_bone_damage_params[static_cast<u16>(element)];
+	hit_scale = aim_bullet && params.aim_hit_scale ? params.aim_hit_scale : params.hit_scale;
+	wound_scale = params.wound_scale;
+	return;
+#endif
 	if (BI_NONE == u16(element))
 	{
 		//считаем что параметры для BI_NONE заданы как 1.f 

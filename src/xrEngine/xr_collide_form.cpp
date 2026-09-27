@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "igame_level.h"
 #include "xr_collide_form.h"
+#include "object_collision_pose.h"
 #include "xr_object.h"
 #include "../xrcdb/xr_area.h"
 #include "x_ray.h"
@@ -112,49 +113,57 @@ IC bool RAYvsCYLINDER(const Fcylinder& c_cylinder, const Fvector& S, const Fvect
 	return ((rp_res == Fcylinder::rpOriginOutside) || (!bCull && (rp_res == Fcylinder::rpOriginInside)));
 }
 
-CCF_Skeleton::CCF_Skeleton(CObject* O) : ICollisionForm(O, cftObject)
+CCF_Skeleton::CCF_Skeleton(CObject* O) : CCF_Skeleton(O, nullptr)
+{}
+
+CCF_Skeleton::CCF_Skeleton(CObject* O, IObjectCollisionPose* pose_override) :
+	ICollisionForm(O, cftObject), dwFrame(u32(-1)), dwFrameTL(u32(-1))
 {
-	//getVisData
-	IRenderVisual* pVisual = O->Visual();
-	//IKinematics* K = PKinematics(pVisual); VERIFY3(K,"Can't create skeleton without Kinematics.",*O->cNameVisual());
-	IKinematics* K = PKinematics(pVisual);
-	VERIFY3(K, "Can't create skeleton without Kinematics.", *O->cNameVisual());
-	//bv_box.set (K->vis.box);
-	bv_box.set(pVisual->getVisData().box);
+	m_pose_override = pose_override;
+	IObjectCollisionPose* pose = PoseSource();
+	R_ASSERT3(pose, "Can't create skeleton without collision pose.", *O->cName());
+	bv_box.set(pose->bounds_box());
 	bv_box.getsphere(bv_sphere.P, bv_sphere.R);
 	vis_mask = 0;
+	m_pose_source = nullptr;
+}
+
+IObjectCollisionPose* CCF_Skeleton::PoseSource() const
+{
+	return m_pose_override ? m_pose_override : owner->CollisionPose();
 }
 
 void CCF_Skeleton::BuildState()
 {
 	dwFrame = Device.dwFrame;
-	IRenderVisual* pVisual = owner->Visual();
-	IKinematics* K = PKinematics(pVisual);
-	K->CalculateBones();
+	IObjectCollisionPose* pose = PoseSource();
+	R_ASSERT3(pose, "Skeleton CFORM lost its collision-pose provider.", *owner->cName());
+	pose->calculate_pose();
 	const Fmatrix& L2W = owner->XFORM();
 
-	if (vis_mask != K->LL_GetBonesVisible())
+	if (m_pose_source != pose || vis_mask != pose->visible_bones())
 	{
-		vis_mask = K->LL_GetBonesVisible();
+		m_pose_source = pose;
+		vis_mask = pose->visible_bones();
 		elements.clear_not_free();
-		bv_box.set(pVisual->getVisData().box);
-		bv_box.getsphere(bv_sphere.P, bv_sphere.R);
-		for (u16 i = 0; i < K->LL_BoneCount(); i++)
+		for (u16 i = 0; i < pose->bone_count(); i++)
 		{
-			if (!K->LL_GetBoneVisible(i)) continue;
-			SBoneShape& shape = K->LL_GetData(i).shape;
+			if (!pose->bone_visible(i)) continue;
+			const SBoneShape& shape = pose->bone_shape(i);
 			if (SBoneShape::stNone == shape.type) continue;
 			if (shape.flags.is(SBoneShape::sfNoPickable)) continue;
 			elements.push_back(SElement(i, shape.type));
 		}
 	}
+	bv_box.set(pose->bounds_box());
+	bv_box.getsphere(bv_sphere.P, bv_sphere.R);
 
 	for (ElementVecIt I = elements.begin(); I != elements.end(); I++)
 	{
 		if (!I->valid()) continue;
-		SBoneShape& shape = K->LL_GetData(I->elem_id).shape;
+		const SBoneShape& shape = pose->bone_shape(I->elem_id);
 		Fmatrix ME, T, TW;
-		const Fmatrix& Mbone = K->LL_GetTransform(I->elem_id);
+		const Fmatrix& Mbone = pose->bone_transform(I->elem_id);
 #ifdef DEBUG
 		VERIFY2(DET(Mbone)>EPS,
 		        (make_string("0 scale bone matrix, %d \n", I->elem_id) + dbg_object_full_dump_string(owner)).c_str());
@@ -213,14 +222,14 @@ void CCF_Skeleton::BuildState()
 void CCF_Skeleton::BuildTopLevel()
 {
 	dwFrameTL = Device.dwFrame;
-	IRenderVisual* K = owner->Visual();
-	vis_data& vis = K->getVisData();
-	Fbox& B = vis.box;
+	IObjectCollisionPose* pose = PoseSource();
+	R_ASSERT3(pose, "Skeleton CFORM lost its collision-pose provider.", *owner->cName());
+	const Fbox& B = pose->bounds_box();
 	bv_box.min.average(B.min);
 	bv_box.max.average(B.max);
 	bv_box.grow(0.05f);
-	bv_sphere.P.average(vis.sphere.P);
-	bv_sphere.R += vis.sphere.R;
+	bv_sphere.P.average(pose->bounds_sphere().P);
+	bv_sphere.R += pose->bounds_sphere().R;
 	bv_sphere.R *= 0.5f;
 	VERIFY(_valid(bv_sphere));
 }
@@ -244,8 +253,9 @@ BOOL CCF_Skeleton::_RayQuery(const collide::ray_defs& Q, collide::rq_results& R)
 	if (dwFrame != Device.dwFrame) BuildState();
 	else
 	{
-		IKinematics* K = PKinematics(owner->Visual());
-		if (K->LL_GetBonesVisible() != vis_mask)
+		IObjectCollisionPose* pose = PoseSource();
+		R_ASSERT3(pose, "Skeleton CFORM lost its collision-pose provider.", *owner->cName());
+		if (pose->visible_bones() != vis_mask)
 		{
 			// Model changed between ray-picks
 			dwFrame = Device.dwFrame - 1;

@@ -4,6 +4,7 @@
 // refs
 class ENGINE_API CObject;
 class NET_Packet;
+class motions_container;
 
 class ENGINE_API CObjectList
 {
@@ -21,6 +22,7 @@ private:
 	Objects objects_sleeping;
 	Objects m_crows[2];
 	u32 m_owner_thread_id;
+	motions_container* m_cpu_motions_cache;
 
 public:
 	typedef fastdelegate::FastDelegate1<CObject*> RELCASE_CALLBACK;
@@ -47,6 +49,7 @@ public:
 	// methods
 	CObjectList();
 	~CObjectList();
+	motions_container& CpuMotionsCache();
 
 	CObject* FindObjectByName(shared_str name);
 	CObject* FindObjectByName(LPCSTR name);

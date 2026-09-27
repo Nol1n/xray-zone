@@ -40,6 +40,9 @@ PROTECT_API void CRenderDevice::Initialize()
 	TimerGlobal.Start();
 	TimerMM.Start();
 
+#ifdef DEDICATED_SERVER
+	b_is_Active = TRUE;
+#else
 #ifdef INGAME_EDITOR
     if (strstr(Core.Params, "-editor"))
         initialize_editor();
@@ -93,4 +96,5 @@ PROTECT_API void CRenderDevice::Initialize()
 
 	Device.seqAppStart.Add(&m_imgui);
 	Device.seqAppEnd.Add(&m_imgui);
+#endif // DEDICATED_SERVER
 }

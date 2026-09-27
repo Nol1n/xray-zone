@@ -107,6 +107,7 @@ public:
 	IC bool callback_on_collision() const;
 	IC void target_matrix();
 	IC void target_matrix(Fmatrix const& matrix);
+	IC Fmatrix const* target_matrix_ptr() const;
 	void target_matrix(Fvector const& position, Fvector const& direction);
 	bool use_animation_movement_control(IKinematicsAnimated* skeleton_animated, MotionID const& motion_id) const;
 };

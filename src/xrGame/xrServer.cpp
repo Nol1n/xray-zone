@@ -4,6 +4,7 @@
 
 #include "pch_script.h"
 #include "xrServer.h"
+#include "../xrEngine/zone_profiler.h"
 #include "xrMessages.h"
 #include "xrServer_Objects_ALife_All.h"
 #include "level.h"
@@ -214,6 +215,8 @@ void xrServer::Update()
 {
 	if (Level().IsDemoPlayStarted() || Level().IsDemoPlayFinished())
 		return; //diabling server when demo is playing
+	zone_profiler::Scope profileServerTick(zone_profiler::Zone::ServerTick);
+	zone_profiler::setGauge(zone_profiler::Gauge::ServerEntities, entities.size());
 
 	NET_Packet Packet;
 #ifdef DEBUG

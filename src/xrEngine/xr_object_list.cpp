@@ -4,6 +4,8 @@
 
 #include "xrSheduler.h"
 #include "xr_object_list.h"
+#include "SkeletonMotions.h"
+#include "zone_profiler.h"
 #include "std_classes.h"
 
 #include "xr_object.h"
@@ -25,7 +27,8 @@ BOOL debug_destroy = TRUE;
 #endif
 
 CObjectList::CObjectList() :
-	m_owner_thread_id(GetCurrentThreadId())
+	m_owner_thread_id(GetCurrentThreadId()),
+	m_cpu_motions_cache(nullptr)
 {
 	ZeroMemory(map_NETID, 0xffff * sizeof(CObject*));
 }
@@ -36,6 +39,18 @@ CObjectList::~CObjectList()
 	R_ASSERT(objects_sleeping.empty());
 	R_ASSERT(destroy_queue.empty());
 	//. R_ASSERT ( map_NETID.empty() );
+	if (m_cpu_motions_cache)
+	{
+		m_cpu_motions_cache->clean(false);
+		xr_delete(m_cpu_motions_cache);
+	}
+}
+
+motions_container& CObjectList::CpuMotionsCache()
+{
+	if (!m_cpu_motions_cache)
+		m_cpu_motions_cache = xr_new<motions_container>();
+	return *m_cpu_motions_cache;
 }
 
 CObject* CObjectList::FindObjectByName(shared_str name)
@@ -293,7 +308,8 @@ void CObjectList::Update(bool bForce)
 			for (; dIt != dIte; ++dIt)
 			{
 				(*It).m_Callback(*dIt);
-				g_hud->net_Relcase(*dIt);
+				if (g_hud)
+					g_hud->net_Relcase(*dIt);
 			}
 		}
 
@@ -343,6 +359,7 @@ int g_Dump_Export_Obj = 0;
 
 u32 CObjectList::net_Export(NET_Packet* _Packet, u32 start, u32 max_object_size)
 {
+	zone_profiler::Scope profileNetworkSerialize(zone_profiler::Zone::NetworkSerialize);
 	if (g_Dump_Export_Obj) Msg("---- net_export --- ");
 
 	NET_Packet& Packet = *_Packet;
@@ -454,6 +471,20 @@ void CObjectList::Unload()
 #endif
 		O->net_Destroy();
 		Destroy(O);
+	}
+
+	// All level objects have released their shared motion handles at this point.
+	if (m_cpu_motions_cache)
+	{
+		m_cpu_motions_cache->clean(false);
+		if (m_cpu_motions_cache->empty())
+			Msg("* [cpu-pose] OMF cache empty after CObjectList::Unload.");
+		else
+		{
+			Msg("! [cpu-pose] OMF cache still owns handles after CObjectList::Unload.");
+			VERIFY2(m_cpu_motions_cache->empty(), "CPU OMF handles remain after CObjectList::Unload");
+		}
+		FlushLog();
 	}
 }
 

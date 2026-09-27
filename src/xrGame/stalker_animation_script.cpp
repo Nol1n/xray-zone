@@ -13,6 +13,8 @@
 #include "game_object_space.h"
 #include "script_callback_ex.h"
 #include "ai_space.h"
+#include "../xrEngine/object_collision_pose.h"
+#include "../xrEngine/SkeletonMotions.h"
 
 void CStalkerAnimationManager::script_play_callback(CBlend* blend)
 {
@@ -51,12 +53,32 @@ void CStalkerAnimationManager::script_play_callback(CBlend* blend)
 void CStalkerAnimationManager::add_script_animation(LPCSTR animation, bool hand_usage, Fvector position,
                                                     Fvector rotation, bool local_animation)
 {
-	const MotionID& motion = m_skeleton_animated->ID_Cycle_Safe(animation);
+	MotionID motion;
+	if (m_skeleton_animated)
+		motion = m_skeleton_animated->ID_Cycle_Safe(animation);
+	else
+	{
+		IObjectCollisionPose* pose = object().CollisionPose();
+		if (!pose || !pose->find_cycle(animation, motion))
+			motion.invalidate();
+	}
 	if (!motion)
 	{
 		ai().script_engine().script_log(eLuaMessageTypeError, "There is no animation %s (object %s)!", animation,
 		                                *object().cName());
 		return;
+	}
+	if (!m_skeleton_animated)
+	{
+		IObjectCollisionPose* pose = object().CollisionPose();
+		SMotionPlaybackState root_state;
+		root_state.id = motion;
+		if (!pose || !pose->configure_motion_playback_state(root_state))
+		{
+			ai().script_engine().script_log(eLuaMessageTypeError,
+				"Script animation %s for object %s has no usable CPU root track", animation, *object().cName());
+			return;
+		}
 	}
 
 	//	Msg("add_script_animation %f,%f,%f %f,%f,%f local=%s [%s]",
@@ -75,7 +97,26 @@ void CStalkerAnimationManager::add_script_animation(LPCSTR animation, bool hand_
 
 void CStalkerAnimationManager::add_script_animation(LPCSTR animation, bool hand_usage, bool use_movement_controller)
 {
-	const MotionID& motion = m_skeleton_animated->ID_Cycle_Safe(animation);
+	MotionID motion;
+	if (m_skeleton_animated)
+		motion = m_skeleton_animated->ID_Cycle_Safe(animation);
+	else
+	{
+		IObjectCollisionPose* pose = object().CollisionPose();
+		if (!pose || !pose->find_cycle(animation, motion))
+			motion.invalidate();
+		else if (use_movement_controller || pose->motion_uses_root_mover(motion))
+		{
+			SMotionPlaybackState root_state;
+			root_state.id = motion;
+			if (!pose->configure_motion_playback_state(root_state))
+			{
+				ai().script_engine().script_log(eLuaMessageTypeError,
+					"Script animation %s for object %s has no usable CPU root track", animation, *object().cName());
+				return;
+			}
+		}
+	}
 	if (!motion)
 	{
 		ai().script_engine().script_log(eLuaMessageTypeError, "There is no animation %s (object %s)!", animation,

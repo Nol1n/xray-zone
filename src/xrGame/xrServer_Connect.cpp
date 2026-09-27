@@ -12,6 +12,9 @@
 #include "file_transfer.h"
 #include "screenshot_server.h"
 #include "../xrNetServer/NET_AuthCheck.h"
+#ifdef DEDICATED_SERVER
+#include "../xrEngine/DedicatedServer.h"
+#endif // DEDICATED_SERVER
 #pragma warning(push)
 #pragma warning(disable:4995)
 #include <malloc.h>
@@ -39,6 +42,9 @@ LPCSTR xrServer::get_map_download_url(LPCSTR level_name, LPCSTR level_version)
 
 xrServer::EConnect xrServer::Connect(shared_str& session_name, GameDescriptionData& game_descr)
 {
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("xrServer::Connect entered");
+#endif // DEDICATED_SERVER
 #ifdef DEBUG
 	Msg						("* sv_Connect: %s",	*session_name);
 #endif
@@ -46,6 +52,9 @@ xrServer::EConnect xrServer::Connect(shared_str& session_name, GameDescriptionDa
 	// Parse options and create game
 	if (0 == strchr(*session_name, '/'))
 		return ErrConnect;
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("xrServer::Connect parsed session options");
+	#endif // DEDICATED_SERVER
 
 	string1024 options;
 	R_ASSERT2(xr_strlen(session_name) <= sizeof(options), "session_name too BIIIGGG!!!");
@@ -59,7 +68,13 @@ xrServer::EConnect xrServer::Connect(shared_str& session_name, GameDescriptionDa
 	game = NULL;
 
 	CLASS_ID clsid = game_GameState::getCLASS_ID(type, true);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("xrServer::Connect resolved game class");
+	#endif // DEDICATED_SERVER
 	game = smart_cast<game_sv_GameState*>(NEW_INSTANCE(clsid));
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("xrServer::Connect game state instance created");
+	#endif // DEDICATED_SERVER
 
 	// Options
 	if (0 == game) return ErrConnect;
@@ -82,10 +97,26 @@ xrServer::EConnect xrServer::Connect(shared_str& session_name, GameDescriptionDa
 	xr_strcpy(game_descr.map_name, game->level_name(session_name.c_str()).c_str());
 	xr_strcpy(game_descr.map_version, game_sv_GameState::parse_level_version(session_name.c_str()).c_str());
 	xr_strcpy(game_descr.download_url, get_map_download_url(game_descr.map_name, game_descr.map_version));
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("xrServer::Connect game description built");
+	#endif // DEDICATED_SERVER
 
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("xrServer::Connect creating game instance");
+	#endif // DEDICATED_SERVER
 	game->Create(session_name);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("xrServer::Connect game instance created");
+	#endif // DEDICATED_SERVER
 
-	return IPureServer::Connect(*session_name, game_descr);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("xrServer::Connect starting network server");
+	#endif // DEDICATED_SERVER
+	EConnect result = IPureServer::Connect(*session_name, game_descr);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("xrServer::Connect network server started");
+	#endif // DEDICATED_SERVER
+	return result;
 }
 
 

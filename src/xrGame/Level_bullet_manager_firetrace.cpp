@@ -174,6 +174,7 @@ void CBulletManager::FireShotmark(SBullet* bullet, const Fvector& vDir, const Fv
 	SGameMtlPair* mtl_pair = GMLib.GetMaterialPair(bullet->bullet_material_idx, target_material);
 	Fvector particle_dir = vNormal;
 
+#ifndef DEDICATED_SERVER
 	if (R.O)
 	{
 		particle_dir = vDir;
@@ -208,6 +209,7 @@ void CBulletManager::FireShotmark(SBullet* bullet, const Fvector& vDir, const Fv
 			::Render->add_StaticWallmark(&*mtl_pair->m_pCollideMarks, vEnd, bullet->wallmark_size, pTri, pVerts);
 		}
 	}
+#endif
 
 	ref_sound* pSound = (!mtl_pair || mtl_pair->CollideSounds.empty())
 		                    ? NULL

@@ -95,6 +95,14 @@ BOOL CHangingLamp::net_Spawn(CSE_Abstract* DC)
 	CSE_ALifeObjectHangingLamp* lamp = smart_cast<CSE_ALifeObjectHangingLamp*>(e);
 	R_ASSERT(lamp);
 	inherited::net_Spawn(DC);
+	#ifdef DEDICATED_SERVER
+	// Lamps are cosmetic scenery. Keep their server state and health, but do
+	// not create render lights, skeletal collision, or visual animation.
+	fHealth = lamp->m_health;
+	setVisible(FALSE);
+	setEnabled(FALSE);
+	return TRUE;
+	#endif
 	Fcolor clr;
 
 	// set bone id
@@ -193,6 +201,9 @@ BOOL CHangingLamp::net_Spawn(CSE_Abstract* DC)
 
 void CHangingLamp::SpawnInitPhysics(CSE_Abstract* D)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	CSE_ALifeObjectHangingLamp* lamp = smart_cast<CSE_ALifeObjectHangingLamp*>(D);
 	if (lamp->flags.is(CSE_ALifeObjectHangingLamp::flPhysic)) CreateBody(lamp);
 	if (smart_cast<IKinematics*>(Visual()))
@@ -205,6 +216,9 @@ void CHangingLamp::SpawnInitPhysics(CSE_Abstract* D)
 
 void CHangingLamp::CopySpawnInit()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	CPHSkeleton::CopySpawnInit();
 	IKinematics* K = smart_cast<IKinematics*>(Visual());
 	if (!K->LL_GetBoneVisible(light_bone))
@@ -372,6 +386,11 @@ void CHangingLamp::TurnOn()
 {
 	if (!Alive())
 		return;
+	#ifdef DEDICATED_SERVER
+	processing_activate();
+	m_bState = 1;
+	return;
+	#endif
 
 	Fvector p = XFORM().c;
 	light_render->set_position(p);
@@ -439,6 +458,11 @@ void CHangingLamp::TurnOff()
 {
 	if (!m_bState)
 		return;
+	#ifdef DEDICATED_SERVER
+	processing_deactivate();
+	m_bState = 0;
+	return;
+	#endif
 
 	light_render->set_active(false);
 	if (glow_render) glow_render->set_active(false);

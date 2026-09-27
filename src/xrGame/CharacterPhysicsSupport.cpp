@@ -184,6 +184,31 @@ void CCharacterPhysicsSupport::update_interactive_anims()
 void CCharacterPhysicsSupport::in_NetSpawn(CSE_Abstract* e)
 {
 	m_sv_hit = SHit();
+	#ifdef DEDICATED_SERVER
+	// A headless entity still needs its CPU character controller for collision,
+	// movement and network synchronization, but it has no skeleton to build a ragdoll from.
+	CPHDestroyable::Init();
+	m_flags.set(fl_death_anim_on, TRUE);
+	m_flags.set(fl_use_hit_anims, FALSE);
+	VERIFY(&e->spawn_ini());
+	movement()->EnableCharacter();
+	movement()->SetPosition(m_EntityAlife.Position());
+	movement()->SetVelocity(0, 0, 0);
+	if (m_eType != etActor)
+	{
+		m_flags.set(fl_specific_bonce_demager, TRUE);
+		m_BonceDamageFactor = 1.f;
+	}
+	anim_mov_state.init();
+	anim_mov_state.active = m_EntityAlife.animation_movement_controlled();
+	CInifile* dedicated_ini = m_EntityAlife.spawn_ini();
+	if (dedicated_ini && dedicated_ini->section_exist("physics") &&
+		dedicated_ini->line_exist("physics", "controller_can_be_moved_by_player"))
+		m_PhysicMovementControl->SetActorMovable(!!dedicated_ini->r_bool("physics", "controller_can_be_moved_by_player"));
+	if (m_EntityAlife.g_Alive())
+		SpawnCharacterCreate();
+	return;
+	#endif
 	if (m_EntityAlife.use_simplified_visual())
 	{
 		m_flags.set(fl_death_anim_on, TRUE);
@@ -395,10 +420,12 @@ void CCharacterPhysicsSupport::in_shedule_Update(u32 DT)
 	if (m_collision_activating_delay)
 		UpdateCollisionActivatingDellay();
 
+	#ifndef DEDICATED_SERVER
 	if (!m_EntityAlife.use_simplified_visual())
 		CPHDestroyable::SheduleUpdate(DT);
 	else if (m_pPhysicsShell && m_pPhysicsShell->isFullActive() && !m_pPhysicsShell->isEnabled())
 		m_EntityAlife.deactivate_physics_shell();
+	#endif
 	movement()->in_shedule_Update(DT);
 #if	0
 	if( anim_mov_state.active )
@@ -527,6 +554,13 @@ void CCharacterPhysicsSupport::in_Hit(SHit& H, bool is_killing)
 	m_hit_valide_time = Device.dwTimeGlobal + hit_valide_time;
 	if (m_EntityAlife.use_simplified_visual() || esRemoved == m_eState)
 		return;
+	#ifdef DEDICATED_SERVER
+	// Keep hit-driven movement on the CPU. Death animations, hit motions and
+	// ragdoll impulses all require a render skeleton, so they are intentionally absent.
+	if (m_PhysicMovementControl->CharacterExist())
+		m_PhysicMovementControl->ApplyHit(H.direction(), H.phys_impulse(), H.type());
+	return;
+	#endif
 	if (m_flags.test(fl_block_hit))
 	{
 		VERIFY2(!m_EntityAlife.g_Alive( ),
@@ -610,6 +644,11 @@ void CCharacterPhysicsSupport::in_UpdateCL()
 	{
 		return;
 	}
+	#ifdef DEDICATED_SERVER
+	// Movement/controller simulation runs in the scheduler; this callback only
+	// contains renderer visibility, IK, animation and ragdoll interpolation work.
+	return;
+	#endif
 #ifdef DEBUG
 	if( dbg_draw_character_bones )
 				dbg_draw_geoms( m_weapon_geoms );
@@ -1448,6 +1487,11 @@ bool CCharacterPhysicsSupport::can_drop_active_weapon()
 
 void CCharacterPhysicsSupport::in_Die(bool hit)
 {
+	#ifdef DEDICATED_SERVER
+	if (hit && m_hit_valide_time >= Device.dwTimeGlobal && m_sv_hit.is_valide())
+		in_Hit(m_sv_hit, true);
+	return;
+	#endif
 	if (m_hit_valide_time < Device.dwTimeGlobal || !m_sv_hit.is_valide())
 	{
 		if (m_EntityAlife.use_simplified_visual())

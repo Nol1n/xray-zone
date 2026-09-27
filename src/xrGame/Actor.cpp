@@ -2183,6 +2183,9 @@ void CActor::SetVisibilityFromObject(u16 who_id, float value)
 
 void CActor::RenderCamAttached()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	if (cam_active == eacFirstEye && ::Render->active_phase() == 0)
 	{
 		if (GetAttachments()->size())
@@ -2214,6 +2217,9 @@ extern Flags32 ps_actor_shadow_flags;
 BOOL r__actor_shadow_in_demo_record = TRUE;
 bool CActor::AllowActorShadow()
 {
+	#ifdef DEDICATED_SERVER
+	return false;
+	#endif
     if (!r__actor_shadow_in_demo_record && !pDemoRecords.empty()) return false;
     if (!r__actor_shadow_in_demo_record && m_FPCam) return false;
 	if (!ps_actor_shadow_flags.test(1)) return false;
@@ -2245,6 +2251,9 @@ bool canRenderLegs(CActor* actor, CHolderCustom* m_holder) noexcept
 
 void CActor::renderable_Render()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#else
 	VERIFY(_valid(XFORM()));
 
     // leg shadows are disabled for DX8 and DX9
@@ -2351,10 +2360,14 @@ void CActor::renderable_Render()
 		inherited::renderable_Render();
 		CInventoryOwner::renderable_Render();
 	}
+#endif
 }
 
 BOOL CActor::renderable_ShadowGenerate()
 {
+#ifdef DEDICATED_SERVER
+	return FALSE;
+#else
 	if (m_holder)
 		return FALSE;
 
@@ -2362,6 +2375,7 @@ BOOL CActor::renderable_ShadowGenerate()
         return FALSE;
 
 	return inherited::renderable_ShadowGenerate();
+#endif
 }
 
 
@@ -3034,6 +3048,9 @@ float CActor::GetRestoreSpeed(ALife::EConditionRestoreType const& type)
 
 void CActor::On_SetEntity()
 {
+	if (g_dedicated_server)
+		return;
+
 	CCustomOutfit* pOutfit = GetOutfit();
 	if (!pOutfit)
 		g_player_hud->load_default();

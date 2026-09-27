@@ -121,6 +121,12 @@ namespace text_editor
 	{
 		m_key_state.zero();
 
+	#ifdef DEDICATED_SERVER
+		// The dedicated server has no local input device; its command console
+		// receives startup commands from the command line and shutdown signals
+		// from the process control handler.
+		return;
+	#else
 		set_key_state(ks_LShift, !!pInput->iGetAsyncKeyState(DIK_LSHIFT));
 		set_key_state(ks_RShift, !!pInput->iGetAsyncKeyState(DIK_RSHIFT));
 		set_key_state(ks_LCtrl, !!pInput->iGetAsyncKeyState(DIK_LCONTROL));
@@ -129,6 +135,7 @@ namespace text_editor
 		set_key_state(ks_RAlt, !!pInput->iGetAsyncKeyState(DIK_RALT));
 		set_key_state(ks_CapsLock, text_editor::get_caps_lock_state());
         set_key_state(ks_NumLock, get_num_lock_state());
+	#endif // DEDICATED_SERVER
 	}
 
 	void line_edit_control::clear_states()

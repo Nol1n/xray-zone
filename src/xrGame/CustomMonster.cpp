@@ -46,6 +46,7 @@
 #include "client_spawn_manager.h"
 #include "moving_object.h"
 #include "level_path_manager.h"
+#include "../xrEngine/object_collision_pose.h"
 
 // Lain: added
 #include "../xrEngine/IGame_Level.h"
@@ -228,8 +229,10 @@ void CCustomMonster::reinit()
 	m_critical_wound_threshold = pSettings->r_float(cNameSect(), "critical_wound_threshold");
 	m_critical_wound_decrease_quant = pSettings->r_float(cNameSect(), "critical_wound_decrease_quant");
 
+	#if !defined(DEDICATED_SERVER)
 	if (m_critical_wound_threshold >= 0)
 		load_critical_wound_bones();
+	#endif
 	//////////////////////////////////////////////////////////////////////////
 	m_update_rotation_on_frame = true;
 	m_movement_enabled_before_animation_controller = true;
@@ -598,6 +601,30 @@ BOOL CCustomMonster::feel_visible_isRelevant(CObject* O)
 
 void CCustomMonster::eye_pp_s0()
 {
+	#ifdef DEDICATED_SERVER
+	// Use the CPU collision bounds as an approximate eye origin. AI vision still
+	// performs its normal frustum/ray tests, without asking for a skeleton bone.
+	Fvector eye_offset;
+	if (IObjectCollisionPose* pose = CollisionPose())
+	{
+		const Fbox& bounds = pose->bounds_box();
+		eye_offset.set((bounds.min.x + bounds.max.x) * 0.5f,
+			bounds.min.y + (bounds.max.y - bounds.min.y) * 0.85f,
+			(bounds.min.z + bounds.max.z) * 0.5f);
+	}
+	else
+		eye_offset.set(0.f, 1.5f, 0.f);
+	Fvector eye_position;
+	XFORM().transform_tiny(eye_position, eye_offset);
+	const MonsterSpace::SBoneRotation& cpu_rotation = head_orientation();
+	eye_matrix.setHPB(-cpu_rotation.current.yaw + m_fEyeShiftYaw, -cpu_rotation.current.pitch, 0);
+	#ifdef HOLDERCUSTOM_NEW
+	if (cast_stalker() && cast_stalker()->Holder())
+		eye_matrix.setHPB(Direction().getH() + m_fEyeShiftYaw, Direction().getP(), 0);
+	#endif
+	eye_matrix.c.add(eye_position, m_tEyeShift);
+	return;
+	#endif
 	// Eye matrix
 	IKinematics* V = smart_cast<IKinematics*>(Visual());
 	V->CalculateBones();
@@ -722,6 +749,9 @@ void CCustomMonster::Exec_Visibility()
 
 void CCustomMonster::UpdateCamera()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	float new_range = eye_range, new_fov = eye_fov;
 	if (g_Alive())
 		update_range_fov(new_range, new_fov, memory().visual().current_state().m_max_view_distance * eye_range,
@@ -806,7 +836,11 @@ BOOL CCustomMonster::net_Spawn(CSE_Abstract* DC)
 	}
 
 	// Eyes
+	#ifdef DEDICATED_SERVER
+	eye_bone = BI_NONE;
+	#else
 	eye_bone = smart_cast<IKinematics*>(Visual())->LL_BoneID(pSettings->r_string(cNameSect(), "bone_head"));
+	#endif
 
 	// weapons
 	if (Local())

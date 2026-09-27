@@ -116,6 +116,7 @@ void CALifeUpdateManager::update()
 	zone_profiler::Scope profileAlifeUpdate(zone_profiler::Zone::ALifeUpdate);
 	update_switch();
 	update_scheduled(false);
+	zone_profiler::setGauge(zone_profiler::Gauge::ALifeRegistryObjects, objects().objects().size());
 }
 
 void CALifeUpdateManager::shedule_Update(u32 dt)

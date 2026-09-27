@@ -161,10 +161,12 @@ public:
 
 	virtual void run()
 	{
+#ifndef DEDICATED_SERVER
 		//добавить отметку на материале
 		::Render->add_StaticWallmark(pWallmarkShader, pos,
 		                             0.09f, T,
 		                             Level().ObjectSpace.GetStaticVerts());
+#endif
 	};
 	virtual bool obsolete() const { return false; }
 };

@@ -4,6 +4,7 @@
 #include "xr_input.h"
 #include "../xrCore/profiler.h"
 #include "zone_profiler.h"
+#include "DedicatedServer.h"
 
 #pragma warning(disable:4995)
 // mmsystem.h
@@ -13,8 +14,11 @@
 #define MMNOMIXER
 #define MMNOJOY
 #include <mmsystem.h>
+#ifndef DEDICATED_SERVER
 // d3dx9.h
 #include <d3dx9.h>
+#pragma comment( lib, "d3dx9.lib" )
+#endif
 #pragma warning(default:4995)
 
 #include "x_ray.h"
@@ -34,8 +38,6 @@
 #include "xrSash.h"
 #include "igame_persistent.h"
 #include "shader_bus.h"
-
-#pragma comment( lib, "d3dx9.lib" )
 
 ENGINE_API CRenderDevice Device;
 ENGINE_API CLoadScreenRenderer load_screen_renderer;
@@ -197,18 +199,26 @@ void mt_Thread(void* ptr)
 		STOP_PROFILE;
 
 		START_PROFILE("Process seqParallel");
-		for (u32 pit = 0; pit < device.seqParallel.size(); pit++)
-			device.seqParallel[pit]();
-		device.seqParallel.clear_not_free();
+		{
+			zone_profiler::Scope profileParallel(zone_profiler::Zone::WorkerParallel);
+			for (u32 pit = 0; pit < device.seqParallel.size(); pit++)
+				device.seqParallel[pit]();
+			device.seqParallel.clear_not_free();
+		}
 		STOP_PROFILE;
 
 		START_PROFILE("Process seqFrameMT");
-		device.seqFrameMT.Process(rp_Frame);
+		{
+			zone_profiler::Scope profileFrameMT(zone_profiler::Zone::WorkerFrameMT);
+			device.seqFrameMT.Process(rp_Frame);
+		}
 		STOP_PROFILE;
 
 		// demonized: While Renderer prepares frame and GPU renders it, use time opportunity to repeatedly call Lua GC with small step value
 		// Reduces stutters since less work will be done in main GC step or no work at all
+		const auto gcBatchStart = std::chrono::steady_clock::now();
 		{
+			zone_profiler::Scope profileGcBatch(zone_profiler::Zone::WorkerGcBatch);
 			PROF_EVENT("seqLuaGC");
 			if (psLua_ParallelGC && Device.LuaGC)
 			{
@@ -225,6 +235,9 @@ void mt_Thread(void* ptr)
 				} while (Device.isRendering && Device.LuaGCCount < psLua_ParallelGC_CallAmount);
 			}
 		}
+		zone_profiler::recordWorkerGcBatch(device.dwFrame, static_cast<unsigned long long>(
+			std::chrono::duration_cast<std::chrono::nanoseconds>(
+				std::chrono::steady_clock::now() - gcBatchStart).count()), Device.LuaGCCount);
 
 		START_PROFILE("Synchronization");
 		// now we give control to device - signals that we are ended our work
@@ -401,6 +414,10 @@ void mt_FreezeThread(void *ptr) {
 
 void CRenderDevice::on_idle()
 {
+#ifdef DEDICATED_SERVER
+	static bool traceFirstDedicatedIdle = true;
+	static u32 traceDedicatedLoadingEvents = 0;
+#endif // DEDICATED_SERVER
 	FreezeTimer.Start();
 
 	if (!b_is_Ready)
@@ -410,6 +427,7 @@ void CRenderDevice::on_idle()
 	}
 
 	zone_profiler::Scope profileFrame(zone_profiler::Zone::Frame);
+	zone_profiler::FrameCaptureScope captureFrame;
 
 	PROF_FRAME("X-RAY Primary thread");
 	PROF_EVENT();
@@ -427,9 +445,24 @@ void CRenderDevice::on_idle()
 	if (g_loading_events.size())
 	{
 		PROF_EVENT("Pop loading event");
-		if (g_loading_events.front()())
+	#ifdef DEDICATED_SERVER
+		const bool traceLoadingEvent = traceDedicatedLoadingEvents < 16;
+		if (traceLoadingEvent)
+		{
+			TraceDedicatedServerBootstrap("loading event callback entered");
+			++traceDedicatedLoadingEvents;
+		}
+	#endif // DEDICATED_SERVER
+		const bool loadingEventComplete = g_loading_events.front()();
+		#ifdef DEDICATED_SERVER
+		if (traceLoadingEvent)
+			TraceDedicatedServerBootstrap(loadingEventComplete ? "loading event callback completed" : "loading event callback yielded");
+		#endif // DEDICATED_SERVER
+		if (loadingEventComplete)
 			g_loading_events.pop_front();
+	#ifndef DEDICATED_SERVER
 		pApp->LoadDraw();
+	#endif
 		return;
 	}
 
@@ -440,7 +473,12 @@ void CRenderDevice::on_idle()
 	}
 
 	FrameMove();
+#ifdef DEDICATED_SERVER
+	if (traceFirstDedicatedIdle)
+		TraceDedicatedServerBootstrap("idle frame move completed");
+#endif // DEDICATED_SERVER
 
+#ifndef DEDICATED_SERVER
 	// Precache
 	if (dwPrecacheFrame)
 	{
@@ -493,16 +531,25 @@ void CRenderDevice::on_idle()
 	mView_saved = mView;
 	mProject_saved = mProject;
 	STOP_PROFILE;
+#endif // DEDICATED_SERVER
 
 	Device.isRendering = true;
 	Device.LuaGCCount = 0;
 	Device.LuaGCDone = false;
+#ifdef DEDICATED_SERVER
+	if (traceFirstDedicatedIdle)
+		TraceDedicatedServerBootstrap("idle frame worker handoff starting");
+#endif // DEDICATED_SERVER
 
 	// *** Resume threads
 	// Capture end point - thread must run only ONE cycle
 	// Release start point - allow thread to run
 	START_PROFILE("Resume threads");
 	mt_csLeave.Enter();
+	#ifdef DEDICATED_SERVER
+	if (traceFirstDedicatedIdle)
+		TraceDedicatedServerBootstrap("idle frame worker handoff entered");
+	#endif // DEDICATED_SERVER
 	mt_csEnter.Leave();
 	STOP_PROFILE;
 
@@ -559,9 +606,24 @@ void CRenderDevice::on_idle()
 	// Capture startup point
 	// Release end point - allow thread to wait for startup point
 	START_PROFILE("Suspend threads");
-	mt_csEnter.Enter();
+	const auto workerJoinStart = std::chrono::steady_clock::now();
+	{
+		zone_profiler::Scope profileWorkerJoin(zone_profiler::Zone::WorkerJoinWait);
+		mt_csEnter.Enter();
+	}
+	#ifdef DEDICATED_SERVER
+	if (traceFirstDedicatedIdle)
+		TraceDedicatedServerBootstrap("idle frame worker join completed");
+	#endif // DEDICATED_SERVER
+	zone_profiler::recordWorkerJoinWait(dwFrame, static_cast<unsigned long long>(
+		std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now() - workerJoinStart).count()));
 	mt_csLeave.Leave();
 	STOP_PROFILE;
+	#ifdef DEDICATED_SERVER
+	if (traceFirstDedicatedIdle)
+		TraceDedicatedServerBootstrap("idle frame worker release completed");
+	#endif // DEDICATED_SERVER
 
 	// Ensure, that second thread gets chance to execute anyway
 	if (dwFrame != mt_Thread_marker)
@@ -572,6 +634,10 @@ void CRenderDevice::on_idle()
 		Device.seqParallel.clear_not_free();
 		seqFrameMT.Process(rp_Frame);
 	}
+	#ifdef DEDICATED_SERVER
+	if (traceFirstDedicatedIdle)
+		TraceDedicatedServerBootstrap("idle frame parallel callbacks completed");
+	#endif // DEDICATED_SERVER
 
 	if (psLua_ParallelGC_debug && psLua_ParallelGC && Device.LuaGCDebug)
 	{
@@ -582,11 +648,52 @@ void CRenderDevice::on_idle()
     u32 FrameEndTime = TimerGlobal.GetElapsed_ms();
     u32 FrameTime = (FrameEndTime - FrameStartTime);
     u32 DSUpdateDelta = 1000 / g_svDedicateServerUpdateReate;
-    if (FrameTime < DSUpdateDelta)
-        Sleep(DSUpdateDelta - FrameTime);
+	if (FrameTime < DSUpdateDelta)
+		Sleep(DSUpdateDelta - FrameTime);
+	if (traceFirstDedicatedIdle)
+	{
+		TraceDedicatedServerBootstrap("first dedicated frame throttled");
+		traceFirstDedicatedIdle = false;
+	}
 #endif
 	if (!b_is_Active)
 		Sleep(1);
+
+	// One-shot diagnostic for the DX11 query lifecycle. The normal launch has
+	// no reset side effect. Run after the render and parallel lanes have joined.
+	static const bool diagnosticGpuReset = [] {
+		if (!Core.Params) return false;
+		const auto containsFlag = [](const char* params, const char* flag) {
+			const size_t length = strlen(flag);
+			for (const char* found = strstr(params, flag); found; found = strstr(found + length, flag))
+				if ((found == params || found[-1] == ' ' || found[-1] == '\t') &&
+					(found[length] == 0 || found[length] == ' ' || found[length] == '\t')) return true;
+			return false;
+		};
+		return containsFlag(Core.Params, "-zone_gpu_reset_once") &&
+			containsFlag(Core.Params, "-zone_gpu_capture") &&
+			containsFlag(Core.Params, "-zone_gpu_passes") &&
+			containsFlag(Core.Params, "-zone_frame_capture");
+	}();
+	if (diagnosticGpuReset)
+	{
+		using Clock = std::chrono::steady_clock;
+		static Clock::time_point gameplayStart;
+		static bool resetDone = false;
+		if (!resetDone && g_pGameLevel && g_pGameLevel->bReady && g_bLoaded &&
+			g_loading_events.empty() && !dwPrecacheFrame && b_is_Active && !Paused() && !IsMainMenuActive())
+		{
+			const Clock::time_point now = Clock::now();
+			if (gameplayStart == Clock::time_point()) gameplayStart = now;
+			if (now - gameplayStart >= std::chrono::seconds(35))
+			{
+				resetDone = true;
+				Msg("* [zone-gpu] diagnostic one-shot Device.Reset(false) after 35 seconds of gameplay");
+				Reset(false);
+				Msg("* [zone-gpu] diagnostic Device.Reset(false) returned");
+			}
+		}
+	}
 }
 
 #ifdef INGAME_EDITOR
@@ -676,17 +783,47 @@ void CRenderDevice::Run()
 	mt_bMustExit = FALSE;
 	thread_spawn(mt_FreezeThread, "Freeze detecting thread", 0, 0);
 	thread_spawn(mt_Thread, "X-RAY Secondary thread", 0, this);
+	#ifndef DEDICATED_SERVER
 	thread_spawn(mt_DiscordThread, "X-RAY Discord thread", 0, 0);
+	#endif // DEDICATED_SERVER
 	// Message cycle
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("entering application start callbacks");
+	#endif // DEDICATED_SERVER
 	seqAppStart.Process(rp_AppStart);
+	#ifndef DEDICATED_SERVER
 	m_pRender->ClearTarget();
 	SetForegroundWindow(m_hWnd);
 	message_loop();
+	#else
+	TraceDedicatedServerBootstrap("application start callbacks completed");
+	bool firstDedicatedFrame = true;
+	while (!DedicatedServerShutdownRequested())
+	{
+		if (firstDedicatedFrame)
+			TraceDedicatedServerBootstrap("entering first simulation frame");
+		on_idle();
+		if (firstDedicatedFrame)
+		{
+			TraceDedicatedServerBootstrap("first simulation frame completed");
+			firstDedicatedFrame = false;
+		}
+	}
+	#endif // DEDICATED_SERVER
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("device loop stopped; processing app end callbacks");
+	#endif // DEDICATED_SERVER
 	seqAppEnd.Process(rp_AppEnd);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("app end callbacks completed; stopping worker threads");
+	#endif // DEDICATED_SERVER
 	// Stop Balance-Thread
 	mt_bMustExit = TRUE;
 	mt_csEnter.Leave();
 	while (mt_bMustExit) Sleep(0);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("worker threads stopped cleanly");
+	#endif // DEDICATED_SERVER
 	// DeleteCriticalSection (&mt_csEnter);
 	// DeleteCriticalSection (&mt_csLeave);
 }
@@ -697,6 +834,11 @@ u32 app_inactive_time_start = 0;
 void CRenderDevice::FrameMove()
 {
 	PROF_EVENT();
+#ifdef DEDICATED_SERVER
+	static bool traceFirstDedicatedFrame = true;
+	if (traceFirstDedicatedFrame)
+		TraceDedicatedServerBootstrap("frame move entered");
+#endif // DEDICATED_SERVER
 
 	if (InterlockedExchange(&g_monitor_list_dirty, 0))
 		refresh_vid_monitor_list();
@@ -743,13 +885,32 @@ void CRenderDevice::FrameMove()
 	}
 	// Frame move
 	Statistic->EngineTOTAL.Begin();
+#ifdef DEDICATED_SERVER
+	if (traceFirstDedicatedFrame)
+		TraceDedicatedServerBootstrap("frame statistics started");
+#endif // DEDICATED_SERVER
 
 	ShaderBus::frame_latch();
+#ifdef DEDICATED_SERVER
+	if (traceFirstDedicatedFrame)
+		TraceDedicatedServerBootstrap("shader bus frame latched");
+#endif // DEDICATED_SERVER
 
 	// TODO: HACK to test loading screen.
 	//if(!g_bLoaded)
 	START_PROFILE("Process seqFrame");
+	#ifdef DEDICATED_SERVER
+	if (traceFirstDedicatedFrame)
+		TraceDedicatedServerBootstrap("processing frame callbacks");
+	#endif // DEDICATED_SERVER
 	Device.seqFrame.Process(rp_Frame);
+	#ifdef DEDICATED_SERVER
+	if (traceFirstDedicatedFrame)
+	{
+		TraceDedicatedServerBootstrap("frame callbacks completed");
+		traceFirstDedicatedFrame = false;
+	}
+	#endif // DEDICATED_SERVER
 	STOP_PROFILE;
 	g_bLoaded = TRUE;
 	//else

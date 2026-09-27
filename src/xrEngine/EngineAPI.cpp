@@ -43,13 +43,16 @@ void __cdecl dummy(void)
 // version.lib;winmm.lib
 
 #pragma comment(lib, "Ws2_32.lib")
+#ifndef DEDICATED_SERVER
 #pragma comment(lib, "vfw32.lib")
 #pragma comment(lib, "nvapi.lib")
+#endif
 
-#if !defined(STATIC_RENDERER_R1) && !defined(STATIC_RENDERER_R2) && !defined(STATIC_RENDERER_R3) && !defined(STATIC_RENDERER_R4)
+#if !defined(DEDICATED_SERVER) && !defined(STATIC_RENDERER_R1) && !defined(STATIC_RENDERER_R2) && !defined(STATIC_RENDERER_R3) && !defined(STATIC_RENDERER_R4)
 	#error Select one of the renderers R1, R2, R3, or R4
 #endif
 
+#ifndef DEDICATED_SERVER
 #ifdef STATIC_RENDERER_R1
 #if defined(STATIC_RENDERER_R2) || defined(STATIC_RENDERER_R3) || defined(STATIC_RENDERER_R4)
 		#error Only one of the renderers R1, R2, R3, and R4 can be selected at once
@@ -86,6 +89,7 @@ void __cdecl dummy(void)
 	#pragma comment(lib, "dxgi.lib")
 	#pragma comment(lib, "d3d10.lib")
 #endif
+#endif // DEDICATED_SERVER
 
 CEngineAPI::CEngineAPI()
 {
@@ -214,15 +218,11 @@ void __cdecl xrFactory_Destroy(DLL_Pure* O);
 
 void CEngineAPI::Initialize(void)
 {
-	//////////////////////////////////////////////////////////////////////////
-	// render
-	LPCSTR r1_name = "xrRender_R1.dll";
-
 #ifndef DEDICATED_SERVER
 	InitializeNotDedicated();
-#endif // DEDICATED_SERVER
 
 #ifdef STATIC_RENDERER_R1
+	LPCSTR r1_name = "xrRender_R1.dll";
 	//if (0 == hRender)
     {
         // try to load R1
@@ -236,11 +236,15 @@ void CEngineAPI::Initialize(void)
 		//hRender = LoadLibrary(r1_name);
 	//if (0 == hRender) R_CHK(GetLastError());
         //R_ASSERT(hRender);
-        g_current_renderer = 1;
-    }
-#endif
+		g_current_renderer = 1;
+	}
+#endif // STATIC_RENDERER_R1
 
+#endif // DEDICATED_SERVER
+
+#ifndef DEDICATED_SERVER
 	Device.ConnectToRender();
+#endif
 
 	// game
 	{
@@ -282,7 +286,9 @@ void CEngineAPI::Destroy(void)
 	//if (hGame) { FreeLibrary(hGame); hGame = 0; }
 	DllMainXrGame(NULL, DLL_PROCESS_DETACH, NULL);
 	//if (hRender) { FreeLibrary(hRender); hRender = 0; }
+#ifndef DEDICATED_SERVER
 	DLL_MAIN_RENDERER(NULL, DLL_PROCESS_DETACH, NULL);
+#endif
 	pCreate = 0;
 	pDestroy = 0;
 	Engine.Event._destroy();

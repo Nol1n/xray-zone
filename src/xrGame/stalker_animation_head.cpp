@@ -47,3 +47,16 @@ MotionID CStalkerAnimationManager::assign_head_animation()
 
 	return (animations[0]);
 }
+
+MotionID CStalkerAnimationManager::assign_head_animation_cpu() const
+{
+	const ANIM_VECTOR& animations = m_data_storage->m_head_animations.A;
+	CSoundPlayer& sound = object().sound();
+	if (!sound.active_sound_count(true))
+		return animations[0];
+
+	if (!sound.active_sound_type((u32)StalkerSpace::eStalkerSoundMaskMovingInDanger))
+		return animations[1];
+
+	return animations[0];
+}

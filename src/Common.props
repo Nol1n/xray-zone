@@ -37,6 +37,11 @@
       <GenerateDebugInformation>false</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(XrDedicatedServer)' == 'true' And ('$(MSBuildProjectName)' == 'xrEngine' Or '$(MSBuildProjectName)' == 'xrGame')">
+    <ClCompile>
+      <PreprocessorDefinitions>DEDICATED_SERVER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <BuildMacro Include="xrBinRootDir">
       <Value>$(xrBinRootDir)</Value>

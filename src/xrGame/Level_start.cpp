@@ -13,6 +13,9 @@
 #include "string_table.h"
 #include "UIGameCustom.h"
 #include "ui/UICDkey.h"
+#ifdef DEDICATED_SERVER
+#include "../xrEngine/DedicatedServer.h"
+#endif // DEDICATED_SERVER
 
 int g_cl_save_demo = 0;
 extern XRCORE_API bool g_allow_heap_min;
@@ -106,6 +109,9 @@ shared_str level_name(const shared_str& server_options);
 
 bool CLevel::net_start1()
 {
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("net_start1 entered");
+	#endif // DEDICATED_SERVER
 	// Start client and server if need it
 	if (m_caServerOptions.size())
 	{
@@ -116,7 +122,13 @@ bool CLevel::net_start1()
 		// Connect
 		if (!xr_strcmp(p.m_game_type, "single"))
 		{
+			#ifdef DEDICATED_SERVER
+			TraceDedicatedServerBootstrap("net_start1 creating single-player server");
+			#endif // DEDICATED_SERVER
 			Server = xr_new<xrServer>();
+			#ifdef DEDICATED_SERVER
+			TraceDedicatedServerBootstrap("net_start1 single-player server created");
+			#endif // DEDICATED_SERVER
 		}
 		else
 		{
@@ -147,25 +159,44 @@ bool CLevel::net_start1()
 	{
 		g_allow_heap_min = false;
 	}
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("net_start1 completed");
+	#endif // DEDICATED_SERVER
 	return true;
 }
 
 bool CLevel::net_start2()
 {
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("net_start2 entered");
+#endif // DEDICATED_SERVER
 	if (net_start_result_total && m_caServerOptions.size())
 	{
 		GameDescriptionData game_descr;
+		#ifdef DEDICATED_SERVER
+		TraceDedicatedServerBootstrap("net_start2 connecting server");
+		#endif // DEDICATED_SERVER
 		if ((m_connect_server_err = Server->Connect(m_caServerOptions, game_descr)) != xrServer::ErrNoError)
 		{
 			net_start_result_total = false;
 			Msg("! Failed to start server.");
 			return true;
 		}
+		#ifdef DEDICATED_SERVER
+		TraceDedicatedServerBootstrap("net_start2 server connected");
+		TraceDedicatedServerBootstrap("net_start2 applying default server level state");
+		#endif // DEDICATED_SERVER
 		Server->SLS_Default();
+		#ifdef DEDICATED_SERVER
+		TraceDedicatedServerBootstrap("net_start2 default server level state applied");
+		#endif // DEDICATED_SERVER
 		map_data.m_name = Server->level_name(m_caServerOptions);
 		if (!g_dedicated_server)
 			g_pGamePersistent->LoadTitle(true, map_data.m_name);
 	}
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("net_start2 completed");
+#endif // DEDICATED_SERVER
 	return true;
 }
 

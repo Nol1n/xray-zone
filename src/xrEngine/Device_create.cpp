@@ -167,6 +167,14 @@ extern void GetMonitorPosition(int& x, int& y);
 
 PROTECT_API void CRenderDevice::Create()
 {
+#ifdef DEDICATED_SERVER
+	if (b_is_Ready) return;
+	Statistic = xr_new<CStats>();
+	fFOV = 90.f;
+	fASPECT = 1.f;
+	b_is_Ready = TRUE;
+	dwFrame = 0;
+#else
 	//SECUROM_MARKER_SECURITY_ON(4)
 
 	if (b_is_Ready) return; // prevent double call
@@ -247,4 +255,5 @@ PROTECT_API void CRenderDevice::Create()
 	PreCache(0, false, false);
 
 	//SECUROM_MARKER_SECURITY_OFF(4)
+#endif // DEDICATED_SERVER
 }

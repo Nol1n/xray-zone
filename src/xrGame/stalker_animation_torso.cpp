@@ -61,14 +61,17 @@ void CStalkerAnimationManager::torso_play_callback(CBlend* blend)
 	CAI_Stalker* object = (CAI_Stalker*)blend->CallbackParam;
 	VERIFY(object);
 
-	CStalkerAnimationManager& animation = object->animation();
-	CStalkerAnimationPair& pair = animation.torso();
-	pair.on_animation_end();
+	object->animation().on_cpu_torso_animation_end();
+}
 
-	if (animation.m_looking_back)
+
+void CStalkerAnimationManager::on_cpu_torso_animation_end()
+{
+	torso().on_animation_end();
+	if (m_looking_back)
 	{
-		animation.m_change_direction_time = Device.dwTimeGlobal + need_look_back_time_interval;
-		animation.m_looking_back = 0;
+		m_change_direction_time = Device.dwTimeGlobal + need_look_back_time_interval;
+		m_looking_back = 0;
 	}
 }
 

@@ -10,6 +10,7 @@
 
 #include "ai_space.h"
 #include "graph_engine.h"
+#include "../xrEngine/zone_profiler.h"
 
 #define TEMPLATE_SPECIALIZATION template <\
 	typename _Graph,\
@@ -65,6 +66,7 @@ IC void CPathManagerTemplate::build_path(const _vertex_id_type start_vertex_id, 
 	}
 
 	before_search(start_vertex_id, dest_vertex_id);
+	zone_profiler::Scope profilePathfinding(zone_profiler::Zone::Pathfinding);
 	m_failed = !ai().graph_engine().search(*m_graph, start_vertex_id, dest_vertex_id, &m_path, *m_evaluator);
 	after_search();
 	m_current_index = _index_type(-1);

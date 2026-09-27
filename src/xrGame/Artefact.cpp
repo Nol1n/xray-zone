@@ -244,12 +244,20 @@ void CArtefact::shedule_Update(u32 dt)
 
 void CArtefact::create_physic_shell()
 {
+	#ifdef DEDICATED_SERVER
+	// Artifact pickup/value/radiation behavior is server-side; its floating and
+	// visual shell currently depends on renderer kinematics.
+	return;
+	#endif
 	m_pPhysicsShell = P_build_Shell(this, false);
 	m_pPhysicsShell->Deactivate();
 }
 
 void CArtefact::StartLights()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	VERIFY(!physics_world()->Processing());
 	if (!m_bLightsEnabled) return;
 

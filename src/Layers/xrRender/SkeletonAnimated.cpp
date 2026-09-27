@@ -987,7 +987,7 @@ void CKinematicsAnimated::LL_BoneMatrixBuild(u16 bone_id, CBoneInstance& bi, con
 	
 	if (LL_GetBoneVisible(bone_id))
 	{
-		bi.mTransform.mul_43(*parent, RES);
+		ComposeMotionBoneTransform(bi.mTransform, *parent, RES);
 		bi.mTransformHidden.set(bi.mTransform);
 	}
 	else

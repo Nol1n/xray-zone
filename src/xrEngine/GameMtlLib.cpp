@@ -3,6 +3,9 @@
 #pragma hdrstop
 
 #include "GameMtlLib.h"
+#ifdef DEDICATED_SERVER
+#include "DedicatedServer.h"
+#endif // DEDICATED_SERVER
 //#include "../include/xrapi/xrapi.h"
 
 #include "../xrCore/mezz_stringbuffer.h"
@@ -69,6 +72,9 @@ void SGameMtl::Load(IReader& fs)
 
 void CGameMtlLibrary::Load()
 {
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("game material library locating binary data");
+#endif // DEDICATED_SERVER
 	string_path name;
 	if (!FS.exist(name, _game_data_, GAMEMTL_FILENAME))
 	{
@@ -80,6 +86,9 @@ void CGameMtlLibrary::Load()
 	R_ASSERT(materials.empty());
 
 	IReader* F = FS.r_open(name);
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("game material binary opened");
+#endif // DEDICATED_SERVER
 	IReader& fs = *F;
 
 	R_ASSERT(fs.find_chunk(GAMEMTLS_CHUNK_VERSION));
@@ -110,6 +119,9 @@ void CGameMtlLibrary::Load()
 		}
 		OBJ->close();
 	}
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("binary game materials loaded");
+#endif // DEDICATED_SERVER
 
 	// demonized: loose gamemtl.xr loading
 	string_path materialsLtxName;
@@ -182,6 +194,9 @@ void CGameMtlLibrary::Load()
 		}
 		xr_delete(materialsLtx);
 	}
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("loose game materials loaded");
+#endif // DEDICATED_SERVER
 
 #ifdef DEBUG_PRINT_MATERIAL
 	for (const auto& mat : materials) {
@@ -220,18 +235,37 @@ void CGameMtlLibrary::Load()
 	}
 #endif // DEBUG_PRINT_MATERIAL
 
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("opening binary material pairs");
+	#endif // DEDICATED_SERVER
 	OBJ = fs.open_chunk(GAMEMTLS_CHUNK_MTLS_PAIR);
 	if (OBJ)
 	{
 		u32 count;
+		u32 loadedPairCount = 0;
+		#ifdef DEDICATED_SERVER
+		TraceDedicatedServerBootstrap("binary material pair chunk opened");
+		#endif // DEDICATED_SERVER
 		for (IReader* O = OBJ->open_chunk_iterator(count); O; O = OBJ->open_chunk_iterator(count, O))
 		{
 			SGameMtlPair* M = xr_new<SGameMtlPair>(this);
 			M->Load(*O);
 			material_pairs.push_back(M);
+			if (loadedPairCount++ == 0)
+			{
+				#ifdef DEDICATED_SERVER
+				TraceDedicatedServerBootstrap("first binary material pair loaded");
+				#endif // DEDICATED_SERVER
+			}
 		}
+		#ifdef DEDICATED_SERVER
+		Msg("* [zone-server-trace] loaded %u binary material pairs", loadedPairCount);
+		#endif // DEDICATED_SERVER
 		OBJ->close();
 	}
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("binary material pairs loaded");
+#endif // DEDICATED_SERVER
 
 	string_path materialPairsLtxName;
 	if (FS.exist(materialPairsLtxName, _game_data_, "materials\\material_pairs", ".ltx"))
@@ -292,35 +326,48 @@ void CGameMtlLibrary::Load()
 				auto s = materialsLtx->r_string(sec.Name, "breaking_sounds");
 				M->BreakingSoundsStr = s ? s : "";
 				M->OwnProps.set(SGameMtlPair::flBreakingSounds, 1);
+				#ifndef DEDICATED_SERVER
 				M->CreateSoundsImpl(M->BreakingSounds, s);
+				#endif // DEDICATED_SERVER
 			}
 			if (materialsLtx->line_exist(sec.Name, "step_sounds")) {
 				auto s = materialsLtx->r_string(sec.Name, "step_sounds");
 				M->StepSoundsStr = s ? s : "";
 				M->OwnProps.set(SGameMtlPair::flStepSounds, 1);
+				#ifndef DEDICATED_SERVER
 				M->CreateSoundsImpl(M->StepSounds, s);
+				#endif // DEDICATED_SERVER
 			}
 			if (materialsLtx->line_exist(sec.Name, "collide_sounds")) {
 				auto s = materialsLtx->r_string(sec.Name, "collide_sounds");
 				M->CollideSoundsStr = s ? s : "";
 				M->OwnProps.set(SGameMtlPair::flCollideSounds, 1);
+				#ifndef DEDICATED_SERVER
 				M->CreateSoundsImpl(M->CollideSounds, s);
+				#endif // DEDICATED_SERVER
 			}
 			if (materialsLtx->line_exist(sec.Name, "collide_particles")) {
 				auto s = materialsLtx->r_string(sec.Name, "collide_particles");
 				M->CollideParticlesStr = s ? s : "";
 				M->OwnProps.set(SGameMtlPair::flCollideParticles, 1);
+				#ifndef DEDICATED_SERVER
 				M->CreateParticlesImpl(M->CollideParticles, s);
+				#endif // DEDICATED_SERVER
 			}
 			if (materialsLtx->line_exist(sec.Name, "collide_marks")) {
 				auto s = materialsLtx->r_string(sec.Name, "collide_marks");
 				M->CollideMarksStr = s ? s : "";
 				M->OwnProps.set(SGameMtlPair::flCollideMarks, 1);
+				#ifndef DEDICATED_SERVER
 				M->CreateMarksImpl(&*M->m_pCollideMarks, s);
+				#endif // DEDICATED_SERVER
 			}
 		}
 		xr_delete(materialsLtx);
 	}
+#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("loose material pairs loaded");
+#endif // DEDICATED_SERVER
 
 #ifdef DEBUG_PRINT_MATERIAL
 	for (const auto& mat : material_pairs) {
@@ -344,6 +391,9 @@ void CGameMtlLibrary::Load()
 #endif // DEBUG_PRINT_MATERIAL
 
 #ifndef _EDITOR
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("building runtime material pair lookup");
+	#endif // DEDICATED_SERVER
 	material_count = (u32)materials.size();
 	material_pairs_rt.resize(material_count * material_count, 0);
 	for (GameMtlPairIt p_it = material_pairs.begin(); material_pairs.end() != p_it; ++p_it)
@@ -354,6 +404,9 @@ void CGameMtlLibrary::Load()
 		material_pairs_rt[idx0] = S;
 		material_pairs_rt[idx1] = S;
 	}
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("runtime material pair lookup built");
+	#endif // DEDICATED_SERVER
 #endif
 
 	/*

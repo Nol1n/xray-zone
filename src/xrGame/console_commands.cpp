@@ -45,6 +45,10 @@
 #include "cameralook.h"
 #include "character_hit_animations_params.h"
 #include "inventory_upgrade_manager.h"
+#include "../Include/xrRender/KinematicsAnimated.h"
+#include "../xrEngine/cpu_rigid_collision_pose.h"
+#include "../xrEngine/xr_collide_form.h"
+#include "../xrEngine/bone.h"
 
 #include "ai_debug_variables.h"
 #include "../xrphysics/console_vars.h"
@@ -999,6 +1003,143 @@ void get_files_list(xr_vector<shared_str>& files, LPCSTR dir, LPCSTR file_ext, b
 }
 
 #include "UIGameCustom.h"
+
+namespace
+{
+enum class ProfileEventStage { Warmup, Coroutine, SaveRequested, Complete, Failed };
+
+struct ProfileEventCheck
+{
+	ProfileEventStage stage = ProfileEventStage::Warmup;
+	ULONGLONG since = 0;
+	bool coroutinePassed = false;
+	string64 saveName = {};
+};
+
+ProfileEventCheck profileEventCheck;
+
+bool profileEventCheckRequested()
+{
+	static const bool requested = []()
+	{
+		const char* flag = "-zone_profile_verify_events";
+		const size_t length = strlen(flag);
+		const char* argument = Core.Params ? strstr(Core.Params, flag) : nullptr;
+		return argument && (argument == Core.Params || argument[-1] == ' ' || argument[-1] == '\t') &&
+			(argument[length] == 0 || argument[length] == ' ' || argument[length] == '\t');
+	}();
+	return requested;
+}
+
+bool profileEventSaveExists()
+{
+	string_path path;
+	return FS.exist(path, "$game_saves$", profileEventCheck.saveName, SAVE_EXTENSION) ||
+		FS.exist(path, "$game_saves$", profileEventCheck.saveName, ".scoc") ||
+		FS.exist(path, "$game_saves$", profileEventCheck.saveName, ".dds");
+}
+
+class CCC_ProfileEventPassed : public IConsole_Command
+{
+public:
+	CCC_ProfileEventPassed(LPCSTR name) : IConsole_Command(name) { bEmptyArgsHandled = true; }
+	void Execute(LPCSTR) override
+	{
+		if (profileEventCheckRequested() && profileEventCheck.stage == ProfileEventStage::Coroutine)
+		{
+			profileEventCheck.coroutinePassed = true;
+			Msg("* [zone-profile-check] coroutine passed: three yields, sum=6");
+		}
+	}
+	void Save(IWriter*) override {} // Never persist a diagnostic completion command to user.ltx.
+};
+}
+
+// Called after the level's script-process update, on the owning main thread.
+// Opt-in, once per process, bounded: never start a new game or overwrite a save.
+void ZoneProfileVerifyEventsOnFrame()
+{
+	if (!profileEventCheckRequested() || g_dedicated_server ||
+		profileEventCheck.stage == ProfileEventStage::Complete ||
+		profileEventCheck.stage == ProfileEventStage::Failed)
+		return;
+	if (!IsGameTypeSingle() || !g_actor || !Actor()->g_Alive() ||
+		Device.Paused() || Device.dwPrecacheFrame || MainMenu()->IsActive())
+		return;
+
+	const ULONGLONG now = GetTickCount64();
+	if (!profileEventCheck.since)
+		profileEventCheck.since = now;
+
+	if (profileEventCheck.stage == ProfileEventStage::Warmup)
+	{
+		if (now - profileEventCheck.since < 10000)
+			return;
+		xr_sprintf(profileEventCheck.saveName, "zone-profile-%lu", static_cast<unsigned long>(GetCurrentProcessId()));
+		if (profileEventSaveExists())
+		{
+			profileEventCheck.stage = ProfileEventStage::Failed;
+			Msg("! [zone-profile-check] aborted: save already exists: %s", profileEventCheck.saveName);
+			return;
+		}
+		CScriptProcess* process = ai().script_engine().script_process(ScriptEngine::eScriptProcessorLevel);
+		if (!process)
+		{
+			profileEventCheck.stage = ProfileEventStage::Failed;
+			Msg("! [zone-profile-check] aborted: no level script process");
+			return;
+		}
+		profileEventCheck.stage = ProfileEventStage::Coroutine;
+		profileEventCheck.since = now;
+		process->add_script("local n=0; for i=1,3 do n=n+i; coroutine.yield() end; assert(n==6); "
+			"get_console():execute('zone_profile_event_pass')", true, false);
+		Msg("* [zone-profile-check] queued coroutine; target save: %s", profileEventCheck.saveName);
+		return;
+	}
+
+	if (profileEventCheck.stage == ProfileEventStage::Coroutine)
+	{
+		if (!profileEventCheck.coroutinePassed)
+		{
+			if (now - profileEventCheck.since >= 10000)
+			{
+				profileEventCheck.stage = ProfileEventStage::Failed;
+				Msg("! [zone-profile-check] aborted: coroutine did not complete within 10 seconds");
+			}
+			return;
+		}
+		if (profileEventSaveExists())
+		{
+			profileEventCheck.stage = ProfileEventStage::Failed;
+			Msg("! [zone-profile-check] aborted: target save appeared before writing");
+			return;
+		}
+		profileEventCheck.stage = ProfileEventStage::SaveRequested;
+		profileEventCheck.since = now;
+		string128 command;
+		strconcat(sizeof(command), command, "save ", profileEventCheck.saveName);
+		Console->Execute(command);
+		Msg("* [zone-profile-check] requested dedicated save: %s", profileEventCheck.saveName);
+		return;
+	}
+
+	if (profileEventCheck.stage == ProfileEventStage::SaveRequested)
+	{
+		if (now - profileEventCheck.since < 1000)
+			return;
+		if (CSavedGameWrapper::saved_game_exist(profileEventCheck.saveName) &&
+			CSavedGameWrapper::valid_saved_game(profileEventCheck.saveName))
+		{
+			profileEventCheck.stage = ProfileEventStage::Complete;
+			Msg("* [zone-profile-check] save header valid: %s; reload verification remains external", profileEventCheck.saveName);
+		}
+		else if (now - profileEventCheck.since >= 10000)
+		{
+			profileEventCheck.stage = ProfileEventStage::Failed;
+			Msg("! [zone-profile-check] aborted: dedicated save not valid within 10 seconds");
+		}
+	}
+}
 
 class CCC_ALifeSave : public IConsole_Command
 {
@@ -2248,6 +2389,439 @@ public:
 	}
 };
 
+#endif // DEBUG: keep the CPU pose comparison available in DX11 profiling builds
+
+class SComparePoseBlends : public IterateBlendsCallback
+{
+public:
+	xr_vector<SMotionPlaybackState> states;
+	bool overflow;
+
+	SComparePoseBlends() : overflow(false) {}
+
+	void operator()(CBlend& blend) override
+	{
+		if (blend.blend_state() == CBlend::eFREE_SLOT)
+			return;
+		if (!blend.motionID.valid() || blend.channel >= MAX_CHANNELS)
+		{
+			overflow = true;
+			return;
+		}
+
+		SMotionPlaybackState state;
+		state.id = blend.motionID;
+		state.channel = blend.channel;
+		state.controller_group = 0;
+		state.time_current = blend.timeCurrent;
+		state.time_total = blend.timeTotal;
+		state.speed = blend.speed;
+		state.weight = blend.blendAmount;
+		state.blend_accrue = blend.blendAccrue;
+		state.blend_falloff = blend.blendFalloff;
+		state.playing = blend.playing != FALSE;
+		state.stop_at_end = blend.stop_at_end != FALSE;
+		state.callback_enabled = blend.stop_at_end_callback != FALSE;
+		state.blend_state = blend.blend_state() == CBlend::eAccrue ? eMotionPlaybackBlendAccrue :
+			blend.blend_state() == CBlend::eFalloff ? eMotionPlaybackBlendFalloff : eMotionPlaybackBlendFixed;
+
+		const u32 valid_partitions = (1u << MAX_PARTS) - 1;
+		state.partition_mask = blend.bone_or_part < MAX_PARTS ? (1u << blend.bone_or_part) : valid_partitions;
+		for (SMotionPlaybackState& existing : states)
+		{
+			if (existing.id == state.id && existing.channel == state.channel &&
+				existing.blend_state == state.blend_state && existing.time_current == state.time_current &&
+				existing.time_total == state.time_total && existing.speed == state.speed &&
+				existing.weight == state.weight && existing.blend_accrue == state.blend_accrue &&
+				existing.blend_falloff == state.blend_falloff && existing.playing == state.playing &&
+				existing.stop_at_end == state.stop_at_end && existing.callback_enabled == state.callback_enabled)
+			{
+				existing.partition_mask |= state.partition_mask;
+				return;
+			}
+		}
+		if (states.size() >= MAX_CHANNELS * MAX_BLENDED)
+		{
+			overflow = true;
+			return;
+		}
+		states.push_back(state);
+	}
+};
+
+float PoseMaxMatrixDelta(const Fmatrix& left, const Fmatrix& right)
+{
+	const float left_values[12] = {left.i.x, left.i.y, left.i.z, left.j.x, left.j.y, left.j.z,
+		left.k.x, left.k.y, left.k.z, left.c.x, left.c.y, left.c.z};
+	const float right_values[12] = {right.i.x, right.i.y, right.i.z, right.j.x, right.j.y, right.j.z,
+		right.k.x, right.k.y, right.k.z, right.c.x, right.c.y, right.c.z};
+	float delta = 0.f;
+	for (u32 component = 0; component < 12; ++component)
+		delta = _max(delta, _abs(left_values[component] - right_values[component]));
+	return delta;
+}
+
+struct SPoseCollisionRayComparison
+{
+	u32 samples = 0;
+	u32 mismatches = 0;
+	float maximum_range_delta = 0.f;
+	u32 mismatched_bone_count = 0;
+	u16 mismatched_bones[16] = {};
+};
+
+SPoseCollisionRayComparison ComparePoseCollisionRays(CObject* object, IObjectCollisionPose* renderer_pose,
+	IObjectCollisionPose* cpu_pose)
+{
+	SPoseCollisionRayComparison result;
+	CCF_Skeleton renderer_collision(object, renderer_pose);
+	CCF_Skeleton cpu_collision(object, cpu_pose);
+
+	for (u16 bone = 0; bone < cpu_pose->bone_count(); ++bone)
+	{
+		const SBoneShape& shape = cpu_pose->bone_shape(bone);
+		if (!cpu_pose->bone_visible(bone) || shape.type == SBoneShape::stNone ||
+			shape.flags.is(SBoneShape::sfNoPickable))
+			continue;
+
+		Fvector center;
+		Fvector axis;
+		float half_extent = 0.f;
+		const Fmatrix& bone_transform = cpu_pose->bone_transform(bone);
+		switch (shape.type)
+		{
+		case SBoneShape::stBox:
+			{
+				Fmatrix obb_transform;
+				Fmatrix bone_to_model;
+				shape.box.xform_get(obb_transform);
+				bone_to_model.mul_43(bone_transform, obb_transform);
+				center.set(bone_to_model.c);
+				axis.set(bone_to_model.i);
+				half_extent = shape.box.m_halfsize.x;
+			}
+			break;
+		case SBoneShape::stSphere:
+			bone_transform.transform_tiny(center, shape.sphere.P);
+			axis.set(bone_transform.i);
+			half_extent = shape.sphere.R;
+			break;
+		case SBoneShape::stCylinder:
+			bone_transform.transform_tiny(center, shape.cylinder.m_center);
+			bone_transform.transform_dir(axis, shape.cylinder.m_direction);
+			half_extent = shape.cylinder.m_height * 0.5f;
+			break;
+		default:
+			continue;
+		}
+
+		if (!std::isfinite(half_extent) || half_extent <= EPS_S || !_valid(center) || !_valid(axis))
+			continue;
+		object->XFORM().transform_tiny(center);
+		object->XFORM().transform_dir(axis);
+		if (axis.square_magnitude() <= EPS_S)
+			continue;
+		axis.normalize_safe();
+
+		const float ray_half_range = half_extent + 0.5f;
+		Fvector start;
+		start.mad(center, axis, -ray_half_range);
+		const collide::ray_defs ray(start, axis, ray_half_range * 2.f, CDB::OPT_ONLYNEAREST, collide::rqtObject);
+		collide::rq_results renderer_results;
+		collide::rq_results cpu_results;
+		renderer_collision._RayQuery(ray, renderer_results);
+		cpu_collision._RayQuery(ray, cpu_results);
+		++result.samples;
+
+		const bool renderer_hit = renderer_results.r_count() != 0;
+		const bool cpu_hit = cpu_results.r_count() != 0;
+		if (renderer_hit != cpu_hit)
+		{
+			++result.mismatches;
+			bool already_recorded = false;
+			for (u32 i = 0; i < result.mismatched_bone_count; ++i)
+				already_recorded |= result.mismatched_bones[i] == bone;
+			if (!already_recorded && result.mismatched_bone_count <
+				(sizeof(result.mismatched_bones) / sizeof(result.mismatched_bones[0])))
+				result.mismatched_bones[result.mismatched_bone_count++] = bone;
+			continue;
+		}
+		if (!renderer_hit)
+			continue;
+
+		const collide::rq_result& renderer_result = *renderer_results.r_begin();
+		const collide::rq_result& cpu_result = *cpu_results.r_begin();
+		const float range_delta = _abs(renderer_result.range - cpu_result.range);
+		result.maximum_range_delta = _max(result.maximum_range_delta, range_delta);
+		if (renderer_result.element != cpu_result.element || range_delta > 0.001f)
+		{
+			++result.mismatches;
+			bool already_recorded = false;
+			for (u32 i = 0; i < result.mismatched_bone_count; ++i)
+				already_recorded |= result.mismatched_bones[i] == bone;
+			if (!already_recorded && result.mismatched_bone_count <
+				(sizeof(result.mismatched_bones) / sizeof(result.mismatched_bones[0])))
+				result.mismatched_bones[result.mismatched_bone_count++] = bone;
+		}
+	}
+	return result;
+}
+
+class CCC_CompareCpuAnimatedPose : public IConsole_Command
+{
+public:
+	CCC_CompareCpuAnimatedPose(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = true; }
+
+	void Execute(LPCSTR arguments) override
+	{
+		if (!g_pGameLevel)
+		{
+			Msg("! CPU pose comparison requires a loaded level.");
+			return;
+		}
+
+		CObject* object = nullptr;
+		if (arguments && arguments[0])
+		{
+			char* end = nullptr;
+			const unsigned long parsed_id = std::strtoul(arguments, &end, 10);
+			if (end == arguments || *end || parsed_id >= 0xffff)
+			{
+				Msg("! Usage: debug_compare_cpu_pose [object_net_id]");
+				return;
+			}
+			object = Level().Objects.net_Find(static_cast<u16>(parsed_id));
+		}
+		else
+			object = Level().CurrentViewEntity();
+
+		if (!object)
+		{
+			Msg("! CPU pose comparison could not find the requested object.");
+			return;
+		}
+
+		IKinematics* const kinematics = smart_cast<IKinematics*>(object->Visual());
+		IKinematicsAnimated* const animated = smart_cast<IKinematicsAnimated*>(object->Visual());
+		if (!kinematics || !animated || !object->cNameVisual())
+		{
+			Msg("! CPU pose comparison needs an animated visual (object %u).", object->ID());
+			return;
+		}
+
+		IObjectCollisionPose* cpu_pose = CreateCpuCollisionPoseFromOGF(*object->cNameVisual(), &Level().Objects);
+		if (!cpu_pose)
+		{
+			Msg("! CPU pose comparison could not load the OGF/OMF rig '%s'.", *object->cNameVisual());
+			return;
+		}
+
+		// Force the renderer to advance and calculate its current pose before copying
+		// blend states. CalculateBones also updates the active blend clocks.
+		kinematics->CalculateBones(TRUE);
+		SComparePoseBlends collector;
+		animated->LL_IterateBlends(collector);
+		if (collector.overflow || collector.states.empty())
+		{
+			Msg("! CPU pose comparison aborted: renderer has no compatible blend set or exceeds %u CPU states.",
+				MAX_CHANNELS * MAX_BLENDED);
+			xr_delete(cpu_pose);
+			return;
+		}
+
+		bool valid_states = true;
+		for (SMotionPlaybackState& state : collector.states)
+		{
+			SMotionPlaybackState definition;
+			definition.id = state.id;
+			if (!cpu_pose->configure_motion_playback_state(definition))
+			{
+				valid_states = false;
+				break;
+			}
+			state.time_total = definition.time_total;
+			Msg("* [cpu-pose] track slot=%u motion=%u channel=%u partition_mask=0x%X time=%.6f total=%.6f weight=%.6f speed=%.6f",
+				state.id.slot, state.id.idx, state.channel, state.partition_mask, state.time_current,
+				state.time_total, state.weight, state.speed);
+		}
+
+		const bool pose_ready = valid_states && cpu_pose->set_motion_playback_states(
+			collector.states.data(), static_cast<int>(collector.states.size()));
+		if (!pose_ready)
+		{
+			Msg("! CPU pose comparison could not apply the renderer blend states to the CPU rig '%s'.",
+				*object->cNameVisual());
+			xr_delete(cpu_pose);
+			return;
+		}
+
+		if (kinematics->LL_BoneCount() != cpu_pose->bone_count())
+		{
+			Msg("! CPU pose comparison bone count differs: renderer=%u cpu=%u.", kinematics->LL_BoneCount(),
+				cpu_pose->bone_count());
+			xr_delete(cpu_pose);
+			return;
+		}
+		IObjectCollisionPose* const renderer_pose = kinematics->dcast_CollisionPose();
+		if (!renderer_pose)
+		{
+			Msg("! CPU pose comparison has no renderer collision-pose adapter for object %u.", object->ID());
+			xr_delete(cpu_pose);
+			return;
+		}
+
+		float maximum_matrix_delta = 0.f;
+		float sum_matrix_delta = 0.f;
+		float maximum_raw_animation_delta = 0.f;
+		float sum_raw_animation_delta = 0.f;
+		float maximum_post_animation_delta = 0.f;
+		u32 compared_components = 0;
+		u32 raw_compared_components = 0;
+		u32 visible_bones = 0;
+		u32 callback_bones = 0;
+		u16 maximum_delta_bone = BI_NONE;
+		u16 maximum_raw_delta_bone = BI_NONE;
+		u16 maximum_post_animation_delta_bone = BI_NONE;
+		float maximum_bone_delta = 0.f;
+		float maximum_raw_bone_delta = 0.f;
+		Fbox renderer_visual_bounds;
+		renderer_visual_bounds.invalidate();
+		Fbox renderer_animation_bounds;
+		renderer_animation_bounds.invalidate();
+		Fbox cpu_visual_bounds;
+		cpu_visual_bounds.invalidate();
+		for (u16 bone = 0; bone < kinematics->LL_BoneCount(); ++bone)
+		{
+			if (!kinematics->LL_GetBoneVisible(bone))
+				continue;
+			++visible_bones;
+			const Fmatrix& renderer = kinematics->LL_GetTransform(bone);
+			const Fmatrix& cpu = cpu_pose->bone_transform(bone);
+			Fmatrix renderer_animation;
+			kinematics->Bone_GetAnimPos(renderer_animation, bone, u8(-1), true);
+			if (kinematics->LL_GetBoneInstance(bone).callback())
+				++callback_bones;
+			const float renderer_values[12] = {renderer.i.x, renderer.i.y, renderer.i.z,
+				renderer.j.x, renderer.j.y, renderer.j.z, renderer.k.x, renderer.k.y, renderer.k.z,
+				renderer.c.x, renderer.c.y, renderer.c.z};
+			const float cpu_values[12] = {cpu.i.x, cpu.i.y, cpu.i.z,
+				cpu.j.x, cpu.j.y, cpu.j.z, cpu.k.x, cpu.k.y, cpu.k.z, cpu.c.x, cpu.c.y, cpu.c.z};
+			const float renderer_animation_values[12] = {renderer_animation.i.x, renderer_animation.i.y,
+				renderer_animation.i.z, renderer_animation.j.x, renderer_animation.j.y, renderer_animation.j.z,
+				renderer_animation.k.x, renderer_animation.k.y, renderer_animation.k.z, renderer_animation.c.x,
+				renderer_animation.c.y, renderer_animation.c.z};
+			float bone_delta = 0.f;
+			float raw_bone_delta = 0.f;
+			float post_animation_bone_delta = 0.f;
+			for (u32 component = 0; component < 12; ++component)
+			{
+				const float delta = _abs(renderer_values[component] - cpu_values[component]);
+				const float raw_delta = _abs(renderer_animation_values[component] - cpu_values[component]);
+				const float post_animation_delta = _abs(renderer_values[component] - renderer_animation_values[component]);
+				maximum_matrix_delta = _max(maximum_matrix_delta, delta);
+				bone_delta = _max(bone_delta, delta);
+				sum_matrix_delta += delta;
+				++compared_components;
+				maximum_raw_animation_delta = _max(maximum_raw_animation_delta, raw_delta);
+				raw_bone_delta = _max(raw_bone_delta, raw_delta);
+				sum_raw_animation_delta += raw_delta;
+				++raw_compared_components;
+				maximum_post_animation_delta = _max(maximum_post_animation_delta, post_animation_delta);
+				post_animation_bone_delta = _max(post_animation_bone_delta, post_animation_delta);
+			}
+			if (bone_delta > maximum_bone_delta)
+			{
+				maximum_bone_delta = bone_delta;
+				maximum_delta_bone = bone;
+			}
+			if (raw_bone_delta > maximum_raw_bone_delta)
+			{
+				maximum_raw_bone_delta = raw_bone_delta;
+				maximum_raw_delta_bone = bone;
+			}
+			if (post_animation_bone_delta > 0.f && post_animation_bone_delta >= maximum_post_animation_delta)
+				maximum_post_animation_delta_bone = bone;
+			if (kinematics->LL_GetBoneInstance(bone).callback())
+				Msg("* [cpu-pose] live callback bone=%u('%s') type=%u overwrite=%u renderer_vs_animation_only=%.6f animation_only_vs_cpu=%.6f",
+					bone, kinematics->LL_BoneName_dbg(bone), kinematics->LL_GetBoneInstance(bone).callback_type(),
+					kinematics->LL_GetBoneInstance(bone).callback_overwrite(), post_animation_bone_delta, raw_bone_delta);
+
+			// The renderer's GetBox() covers the authored per-bone OBBs. The CPU
+			// provider's bounds also include collision shapes, so derive an OBB-only
+			// CPU box here for an apples-to-apples visual bounds comparison. Do the
+			// same from renderer matrices instead of trusting its periodically cached GetBox().
+			const Fobb& obb = kinematics->LL_GetBox(bone);
+			Fmatrix obb_transform;
+			Fmatrix renderer_bone_to_model;
+			Fmatrix renderer_animation_bone_to_model;
+			Fmatrix cpu_bone_to_model;
+			obb.xform_get(obb_transform);
+			renderer_bone_to_model.mul_43(renderer, obb_transform);
+			renderer_animation_bone_to_model.mul_43(renderer_animation, obb_transform);
+			cpu_bone_to_model.mul_43(cpu, obb_transform);
+			for (u32 corner = 0; corner < 8; ++corner)
+			{
+				Fvector point;
+				point.set(
+					(corner & 1) ? obb.m_halfsize.x : -obb.m_halfsize.x,
+					(corner & 2) ? obb.m_halfsize.y : -obb.m_halfsize.y,
+					(corner & 4) ? obb.m_halfsize.z : -obb.m_halfsize.z);
+				Fvector renderer_point = point;
+				Fvector renderer_animation_point = point;
+				Fvector cpu_point = point;
+				renderer_bone_to_model.transform_tiny(renderer_point);
+				renderer_animation_bone_to_model.transform_tiny(renderer_animation_point);
+				cpu_bone_to_model.transform_tiny(cpu_point);
+				renderer_visual_bounds.modify(renderer_point);
+				renderer_animation_bounds.modify(renderer_animation_point);
+				cpu_visual_bounds.modify(cpu_point);
+			}
+		}
+
+		const Fbox& renderer_bounds = kinematics->GetBox();
+		const auto max_bounds_delta = [](const Fbox& left, const Fbox& right)
+		{
+			const float x_delta = _max(_abs(left.min.x - right.min.x), _abs(left.max.x - right.max.x));
+			const float y_delta = _max(_abs(left.min.y - right.min.y), _abs(left.max.y - right.max.y));
+			const float z_delta = _max(_abs(left.min.z - right.min.z), _abs(left.max.z - right.max.z));
+			return _max(_max(x_delta, y_delta), z_delta);
+		};
+		const float maximum_visual_bounds_delta = max_bounds_delta(renderer_visual_bounds, cpu_visual_bounds);
+		const float maximum_raw_animation_bounds_delta = max_bounds_delta(renderer_animation_bounds, cpu_visual_bounds);
+		const float renderer_cached_bounds_delta = max_bounds_delta(renderer_bounds, renderer_visual_bounds);
+		const float cpu_collision_bounds_delta = max_bounds_delta(cpu_pose->bounds_box(), cpu_visual_bounds);
+		const float mean_matrix_delta = compared_components ? sum_matrix_delta / float(compared_components) : 0.f;
+		const float mean_raw_animation_delta = raw_compared_components ? sum_raw_animation_delta / float(raw_compared_components) : 0.f;
+		const SPoseCollisionRayComparison collision_rays =
+			ComparePoseCollisionRays(object, renderer_pose, cpu_pose);
+		const shared_str& maximum_delta_bone_name = maximum_delta_bone != BI_NONE ?
+			kinematics->LL_GetData(maximum_delta_bone).name : shared_str("<none>");
+		const shared_str& maximum_raw_delta_bone_name = maximum_raw_delta_bone != BI_NONE ?
+			kinematics->LL_GetData(maximum_raw_delta_bone).name : shared_str("<none>");
+		const shared_str& maximum_post_animation_delta_bone_name = maximum_post_animation_delta_bone != BI_NONE ?
+			kinematics->LL_GetData(maximum_post_animation_delta_bone).name : shared_str("<none>");
+		Msg("CPU pose compare: object=%u visual='%s' tracks=%u bones=%u callback_bones=%u max_matrix_delta=%.6f mean_matrix_delta=%.6f worst_bone=%u('%s') worst_bone_delta=%.6f raw_animation_max_delta=%.6f raw_animation_mean_delta=%.6f raw_worst_bone=%u('%s') raw_worst_bone_delta=%.6f post_animation_max_delta=%.6f post_animation_worst_bone=%u('%s') max_visual_bounds_delta=%.6f raw_animation_bounds_delta=%.6f renderer_cached_bounds_delta=%.6f cpu_collision_bounds_delta_from_obb=%.6f collision_rays=%u collision_ray_mismatches=%u collision_mismatch_bones=%u max_collision_ray_delta=%.6f",
+			object->ID(), *object->cNameVisual(), static_cast<u32>(collector.states.size()), visible_bones,
+			callback_bones, maximum_matrix_delta, mean_matrix_delta, maximum_delta_bone, *maximum_delta_bone_name, maximum_bone_delta,
+			maximum_raw_animation_delta, mean_raw_animation_delta, maximum_raw_delta_bone, *maximum_raw_delta_bone_name,
+			maximum_raw_bone_delta, maximum_post_animation_delta, maximum_post_animation_delta_bone, *maximum_post_animation_delta_bone_name,
+			maximum_visual_bounds_delta, maximum_raw_animation_bounds_delta, renderer_cached_bounds_delta,
+			cpu_collision_bounds_delta,
+			collision_rays.samples, collision_rays.mismatches, collision_rays.mismatched_bone_count, collision_rays.maximum_range_delta);
+		for (u32 i = 0; i < collision_rays.mismatched_bone_count; ++i)
+		{
+			const u16 bone = collision_rays.mismatched_bones[i];
+			const float cpu_to_renderer_delta = PoseMaxMatrixDelta(kinematics->LL_GetTransform(bone),
+				cpu_pose->bone_transform(bone));
+			Msg("* [cpu-pose] collision mismatch bone=%u('%s') has_live_callback=%u renderer_vs_cpu=%.6f",
+				bone, kinematics->LL_BoneName_dbg(bone), kinematics->LL_GetBoneInstance(bone).callback() != nullptr,
+				cpu_to_renderer_delta);
+		}
+		xr_delete(cpu_pose);
+	}
+};
+
+#ifdef DEBUG
 extern void show_animation_stats();
 
 class CCC_ShowAnimationStats : public IConsole_Command
@@ -2502,11 +3076,15 @@ void CCC_RegisterCommands()
 #endif // DEBUG
 
 	CMD1(CCC_ALifeSave, "save"); // save game
+	if (profileEventCheckRequested())
+		CMD1(CCC_ProfileEventPassed, "zone_profile_event_pass");
 	CMD1(CCC_ALifeLoadFrom, "load"); // load game from ...
 	CMD1(CCC_LoadLastSave, "load_last_save"); // load last saved game from ...
 
 	CMD1(CCC_FlushLog, "flush"); // flush log
 	CMD1(CCC_ClearLog, "clear_log");
+	// Keep the renderer/CPU pose comparison available in non-DEBUG profiling builds.
+	CMD1(CCC_CompareCpuAnimatedPose, "debug_compare_cpu_pose");
 
 #ifndef MASTER_GOLD
 	CMD1(CCC_ALifeTimeFactor, "al_time_factor");		// set time factor

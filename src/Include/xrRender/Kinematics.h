@@ -11,6 +11,7 @@ class IBoneData;
 class IKinematicsAnimated;
 class IRenderVisual;
 class ISpatial;
+class IObjectCollisionPose;
 class CBoneInstance;
 struct SEnumVerticesCallback;
 
@@ -97,6 +98,7 @@ public:
 	//void*								Update_Callback_Param;
 	virtual IRenderVisual* _BCL dcast_RenderVisual() = 0;
 	virtual IKinematicsAnimated* dcast_PKinematicsAnimated() = 0;
+	virtual IObjectCollisionPose* dcast_CollisionPose() { return nullptr; }
 
 	// debug
 #ifdef DEBUG

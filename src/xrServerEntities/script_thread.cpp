@@ -15,6 +15,7 @@
 //-AVO
 #include "script_engine.h"
 #include "script_thread.h"
+#include "../xrEngine/zone_profiler.h"
 #include "ai_space.h"
 
 #define LUABIND_HAS_BUGS_WITH_LUA_THREADS
@@ -143,6 +144,7 @@ CScriptThread::~CScriptThread()
 
 bool CScriptThread::update()
 {
+	zone_profiler::Scope profileLuaCoroutine(zone_profiler::Zone::LuaCoroutine);
 	if (!m_active)
 		R_ASSERT2(false, "Cannot resume dead Lua thread!");
 

@@ -97,6 +97,9 @@ void CShootingObject::Load(LPCSTR section)
 
 void CShootingObject::Light_Create()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	//lights
 	light_render = ::Render->light_create();
 	if (::Render->get_generation() == IRender_interface::GENERATION_R2) light_render->set_shadow(true);
@@ -193,6 +196,9 @@ void CShootingObject::LoadLights(LPCSTR section, LPCSTR prefix)
 
 void CShootingObject::Light_Start()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	if (!light_render) Light_Create();
 
 	if (Device.dwFrame != light_frame)
@@ -209,6 +215,9 @@ void CShootingObject::Light_Start()
 
 void CShootingObject::Light_Render(const Fvector& P)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	float light_scale = light_time / light_lifetime;
 	R_ASSERT(light_render);
 

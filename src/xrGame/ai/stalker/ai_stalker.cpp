@@ -7,6 +7,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "pch_script.h"
+#include "../../../xrEngine/zone_profiler.h"
 #include "ai_stalker.h"
 #include "../ai_monsters_misc.h"
 #include "../../weapon.h"
@@ -734,13 +735,18 @@ BOOL CAI_Stalker::net_Spawn(CSE_Abstract* DC)
 	setEnabled(TRUE);
 
 
+	#ifndef DEDICATED_SERVER
 	if (!Level().CurrentViewEntity())
 		Level().SetEntity(this);
+	#endif
 
 	if (!g_Alive())
 		sound().set_sound_mask(u32(eStalkerSoundMaskDie));
 
-	//загрузить иммунитеты из модельки сталкера
+	// Model user data provides optional immunity/bone overrides in the client.
+	// A dedicated entity has no render model; rank scaling and gameplay defaults
+	// are still loaded from the normal actor configuration below.
+	#ifndef DEDICATED_SERVER
 	IKinematics* pKinematics = smart_cast<IKinematics*>(Visual());
 	VERIFY(pKinematics);
 	CInifile* ini = pKinematics->LL_UserData();
@@ -758,6 +764,7 @@ BOOL CAI_Stalker::net_Spawn(CSE_Abstract* DC)
 			m_boneHitProtection->reload(ini->r_string("bone_protection", "bones_protection_sect"), pKinematics);
 		}
 	}
+	#endif
 
 	//вычислить иммунета в зависимости от ранга
 	static float novice_rank_immunity = pSettings->r_float("ranks_properties", "immunities_novice_k");
@@ -783,7 +790,7 @@ BOOL CAI_Stalker::net_Spawn(CSE_Abstract* DC)
 
 	sight().setup(CSightAction(SightManager::eSightTypeCurrentDirection));
 
-#ifdef _DEBUG
+	#if defined(_DEBUG) && !defined(DEDICATED_SERVER)
 	if (ai().get_alife() && !Level().MapManager().HasMapLocation("debug_stalker",ID())) {
 		CMapLocation				*map_location = 
 			Level().MapManager().AddMapLocation(
@@ -811,7 +818,8 @@ BOOL CAI_Stalker::net_Spawn(CSE_Abstract* DC)
 
 	m_pPhysics_support->in_NetSpawn(e);
 
-	// LookAtActor feature
+	// LookAtActor feature depends on the visual head-bone callback.
+	#ifndef DEDICATED_SERVER
 	{
 		IKinematics* k = smart_cast<IKinematics*>(Visual());
 		if (k)
@@ -820,6 +828,7 @@ BOOL CAI_Stalker::net_Spawn(CSE_Abstract* DC)
 			bone_head->set_callback(bctCustom, BoneCallback, this);
 		}
 	}
+	#endif
 
 	return (TRUE);
 }
@@ -1215,7 +1224,9 @@ void CAI_Stalker::shedule_Update(u32 DT)
 			if (Device.dwFrame > (spawn_time() + g_AI_inactive_time))
 #endif
 					Think();
-				m_dwLastUpdateTime = Device.dwTimeGlobal;
+					animation().update_cpu_animations();
+					CStepManager::update_cpu_footsteps(float(DT) / 1000.f);
+					m_dwLastUpdateTime = Device.dwTimeGlobal;
 				Device.Statistic->AI_Think.End();
 				VERIFY(_valid(Position()));
 
@@ -1291,6 +1302,7 @@ void CAI_Stalker::spawn_supplies()
 
 void CAI_Stalker::Think()
 {
+	zone_profiler::Scope profileAI(zone_profiler::Zone::AI);
 	START_PROFILE("stalker/schedule_update/think")
 		u32 update_delta = Device.dwTimeGlobal - m_dwLastUpdateTime;
 

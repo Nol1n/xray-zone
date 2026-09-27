@@ -1,5 +1,8 @@
 #include "pch_script.h"
 #include "gamepersistent.h"
+#ifdef DEDICATED_SERVER
+#include "../xrEngine/DedicatedServer.h"
+#endif // DEDICATED_SERVER
 #include "../xrEngine/fmesh.h"
 #include "../xrEngine/xr_ioconsole.h"
 #include "../xrEngine/gamemtllib.h"
@@ -36,6 +39,7 @@
 #ifndef MASTER_GOLD
 #	include "custommonster.h"
 #endif // MASTER_GOLD
+#include "entity_alive.h"
 
 #ifndef _EDITOR
 #	include "ai_debug.h"
@@ -103,8 +107,16 @@ CGamePersistent::CGamePersistent(void)
 	}
 
 	eQuickLoad = Engine.Event.Handler_Attach("Game:QuickLoad", this);
+#ifdef DEDICATED_SERVER
+	// Renderer cvars are not registered in the dedicated target.
+	Fvector3 dedicatedDof;
+	dedicatedDof.set(-1.4f, 0.0f, 250.f);
+	SetBaseDof(dedicatedDof);
+	TraceDedicatedServerBootstrap("game persistent renderer defaults initialized");
+#else // DEDICATED_SERVER
 	Fvector3* DofValue = Console->GetFVectorPtr("r2_dof");
 	SetBaseDof(*DofValue);
+#endif // DEDICATED_SERVER
 
 	m_pWallmarksManager = nullptr;
 }
@@ -155,30 +167,58 @@ extern void init_game_globals();
 
 void CGamePersistent::OnAppStart()
 {
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("game persistent loading materials");
+	#endif // DEDICATED_SERVER
 	// load game materials
 	GMLib.Load();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("game materials loaded");
+	#endif // DEDICATED_SERVER
 	init_game_globals();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("game globals initialized");
+	#endif // DEDICATED_SERVER
 	__super::OnAppStart();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("base persistent app start completed");
+	#endif // DEDICATED_SERVER
+	#ifndef DEDICATED_SERVER
 	m_pUI_core = xr_new<ui_core>();
 	m_pMainMenu = xr_new<CMainMenu>();
 	m_pWallmarksManager = xr_new<ScriptWallmarksManager>();
+	#endif // DEDICATED_SERVER
 }
 
 
 void CGamePersistent::OnAppEnd()
 {
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("game persistent app end entered");
+	#endif // DEDICATED_SERVER
+	#ifndef DEDICATED_SERVER
 	if (m_pMainMenu->IsActive())
 		m_pMainMenu->Activate(false);
 
 	xr_delete(m_pMainMenu);
 	xr_delete(m_pUI_core);
 	xr_delete(m_pWallmarksManager);
+	#endif // DEDICATED_SERVER
 
 	__super::OnAppEnd();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("base persistent app end completed");
+	#endif // DEDICATED_SERVER
 
 	clean_game_globals();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("game globals cleaned");
+	#endif // DEDICATED_SERVER
 
 	GMLib.Unload();
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("game materials unloaded");
+	#endif // DEDICATED_SERVER
 }
 
 void CGamePersistent::Start(LPCSTR op)
@@ -702,6 +742,7 @@ extern CUISequencer* g_tutorial2;
 
 void CGamePersistent::OnFrame()
 {
+	#ifndef DEDICATED_SERVER
 	if (Device.dwPrecacheFrame == 5 && m_intro_event.empty())
 	{
 		m_intro_event.bind(this, &CGamePersistent::game_loaded);
@@ -730,9 +771,128 @@ void CGamePersistent::OnFrame()
 
 	if (!m_pMainMenu->IsActive())
 		m_pMainMenu->DestroyInternal(false);
+	#endif // DEDICATED_SERVER
 
 	if (!g_pGameLevel) return;
 	if (!g_pGameLevel->bReady) return;
+
+	// Run the passive CPU/render pose comparison once in explicit profiling sessions.
+	// This avoids relying on platform-specific console-key injection for the diagnostic.
+	const auto findExactCommandLineFlag = [](const char* parameters, const char* flag) -> const char* {
+		if (!parameters || !flag || !flag[0])
+			return nullptr;
+
+		const size_t flagLength = strlen(flag);
+		for (const char* match = strstr(parameters, flag); match; match = strstr(match + flagLength, flag))
+		{
+			const bool beginsToken = match == parameters || match[-1] == ' ' || match[-1] == '\t';
+			const bool endsToken = match[flagLength] == 0 || match[flagLength] == ' ' || match[flagLength] == '\t';
+			if (beginsToken && endsToken)
+				return match;
+		}
+		return nullptr;
+	};
+	static const bool requestCpuPoseComparison = findExactCommandLineFlag(Core.Params, "-zone_profile") &&
+		findExactCommandLineFlag(Core.Params, "-zone_profile_keep_active");
+	static const bool requestCpuPoseUnloadReloadOnce =
+		findExactCommandLineFlag(Core.Params, "-cpu_pose_unload_reload_once") != nullptr;
+	static bool cpuPoseComparisonDispatched = false;
+	if (requestCpuPoseComparison && !cpuPoseComparisonDispatched && Console && Level().CurrentViewEntity())
+	{
+		cpuPoseComparisonDispatched = true;
+		CObject* const view_entity = Level().CurrentViewEntity();
+		const auto compare_object = [](CObject* object, LPCSTR role)
+		{
+			if (!object)
+				return;
+			Msg("* [cpu-pose] Running renderer/CPU comparison for %s entity %u visual='%s'.",
+				role, object->ID(), object->cNameVisual().size() ? *object->cNameVisual() : "<none>");
+			string64 command;
+			xr_sprintf(command, "debug_compare_cpu_pose %u", object->ID());
+			Console->Execute(command);
+		};
+		compare_object(view_entity, "view");
+
+		CObject* nearest_alive_rigs[2] = {};
+		CObject* nearest_mutant_rig = nullptr;
+		float nearest_alive_distances[2] = {flt_max, flt_max};
+		float nearest_mutant_distance = flt_max;
+		u32 scanned_objects = 0;
+		u32 visual_objects = 0;
+		u32 animated_rigs = 0;
+		u32 alive_animated_rigs = 0;
+		u32 mutant_rigs = 0;
+		for (u32 index = 0; index < Level().Objects.o_count(); ++index)
+		{
+			CObject* const candidate = Level().Objects.o_get_by_iterator(index);
+			if (!candidate)
+				continue;
+			++scanned_objects;
+			if (candidate == view_entity || !candidate->Visual())
+				continue;
+			++visual_objects;
+			if (!smart_cast<IKinematicsAnimated*>(candidate->Visual()))
+				continue;
+			++animated_rigs;
+			if (!smart_cast<CEntityAlive*>(candidate))
+				continue;
+			++alive_animated_rigs;
+
+			const float distance = view_entity->Position().distance_to(candidate->Position());
+			const char* const visual_name = candidate->cNameVisual().size() ? *candidate->cNameVisual() : "";
+			if (strstr(visual_name, "monsters\\") == visual_name)
+			{
+				++mutant_rigs;
+				if (distance < nearest_mutant_distance)
+				{
+					nearest_mutant_rig = candidate;
+					nearest_mutant_distance = distance;
+				}
+			}
+			if (distance < nearest_alive_distances[0])
+			{
+				nearest_alive_rigs[1] = nearest_alive_rigs[0];
+				nearest_alive_distances[1] = nearest_alive_distances[0];
+				nearest_alive_rigs[0] = candidate;
+				nearest_alive_distances[0] = distance;
+			}
+			else if (distance < nearest_alive_distances[1])
+			{
+				nearest_alive_rigs[1] = candidate;
+				nearest_alive_distances[1] = distance;
+			}
+		}
+		Msg("* [cpu-pose] rig scan: objects=%u visuals=%u animated=%u alive_animated=%u mutant_rigs=%u.",
+			scanned_objects, visual_objects, animated_rigs, alive_animated_rigs, mutant_rigs);
+		compare_object(nearest_alive_rigs[0], "nearest-alive");
+		compare_object(nearest_alive_rigs[1], "second-nearest-alive");
+		compare_object(nearest_mutant_rig, "nearest-mutant");
+		// Profiling keeps the process alive; flush the one-shot result so it can be
+		// inspected without closing the running GAMMA session.
+		FlushLog();
+	}
+
+	// A one-shot, command-line opt-in lets runtime checks exercise CObjectList::Unload
+	// without relying on keyboard injection into the in-game console. Reuse the exact
+	// startup command so the currently selected saved game is loaded again.
+	static bool cpuPoseUnloadReloadDispatched = false;
+	if (requestCpuPoseUnloadReloadOnce && !cpuPoseUnloadReloadDispatched && Console &&
+		Level().CurrentViewEntity())
+	{
+		cpuPoseUnloadReloadDispatched = true;
+		const char* const startup_option = findExactCommandLineFlag(Core.Params, "-start");
+		if (!startup_option || startup_option[strlen("-start")] != ' ')
+		{
+			Msg("! [cpu-pose] unload/reload check requires a '-start <command>' launch argument.");
+			FlushLog();
+		}
+		else
+		{
+			Msg("* [cpu-pose] scheduling one level unload/reload from the startup command.");
+			FlushLog();
+			Console->Execute(startup_option + 1);
+		}
+	}
 
 	if (Device.Paused())
 	{
@@ -949,15 +1109,20 @@ void CGamePersistent::OnAppDeactivate()
 	if (!bEntryFlag) return;
 
 	bool bIsMP = (g_pGameLevel && Level().game && GameID() != eGameIDSingle);
+	const bool keepProfileActive = Core.Params && strstr(Core.Params, "-zone_profile_keep_active");
 
 	bRestorePause = FALSE;
 
-	if (!bIsMP)
+	if (!bIsMP && keepProfileActive)
+	{
+		Device.Pause(FALSE, TRUE, TRUE, "CGP::OnAppDeactivate zone-profile");
+	}
+	else if (!bIsMP)
 	{
 		bRestorePause = Device.Paused();
 		Device.Pause(TRUE, TRUE, TRUE, "CGP::OnAppDeactivate");
 	}
-	else
+	else if (bIsMP)
 	{
 		Device.Pause(TRUE, FALSE, TRUE, "CGP::OnAppDeactivate MP");
 	}
@@ -967,7 +1132,11 @@ void CGamePersistent::OnAppDeactivate()
 
 bool CGamePersistent::OnRenderPPUI_query()
 {
+	#ifdef DEDICATED_SERVER
+	return false;
+	#else
 	return MainMenu()->OnRenderPPUI_query();
+	#endif // DEDICATED_SERVER
 	// enable PP or not
 }
 
@@ -975,14 +1144,18 @@ extern void draw_wnds_rects();
 
 void CGamePersistent::OnRenderPPUI_main()
 {
+	#ifndef DEDICATED_SERVER
 	// always
 	MainMenu()->OnRenderPPUI_main();
 	draw_wnds_rects();
+	#endif // DEDICATED_SERVER
 }
 
 void CGamePersistent::OnRenderPPUI_PP()
 {
+	#ifndef DEDICATED_SERVER
 	MainMenu()->OnRenderPPUI_PP();
+	#endif // DEDICATED_SERVER
 }
 
 #include "string_table.h"
@@ -990,6 +1163,9 @@ void CGamePersistent::OnRenderPPUI_PP()
 
 void CGamePersistent::LoadTitle(bool change_tip, shared_str map_name)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#else
 	pApp->LoadStage();
 	if (change_tip)
 	{
@@ -1023,6 +1199,7 @@ void CGamePersistent::LoadTitle(bool change_tip, shared_str map_name)
 		pApp->LoadTitleInt(CStringTable().translate("ls_header").c_str(), tmp.c_str(),
 		                   CStringTable().translate(buff).c_str());
 	}
+	#endif // DEDICATED_SERVER
 }
 
 bool CGamePersistent::CanBePaused()

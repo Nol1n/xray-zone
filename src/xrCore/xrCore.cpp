@@ -140,6 +140,9 @@ void xrCore::_initialize(LPCSTR _ApplicationName, LogCallback cb, BOOL init_fs, 
 			Params = xr_strdup(temp);
 		}
 		cmdlineTxt.close();
+		// The final arguments include commandline.txt. Still before workers start.
+		extern void xr_initialize_allocation_statistics(const char* arguments);
+		xr_initialize_allocation_statistics(Params);
 	}
 	if (init_fs)
 	{

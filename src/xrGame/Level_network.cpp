@@ -240,6 +240,7 @@ void CLevel::ClientSend()
 
 u32 CLevel::Objects_net_Save(NET_Packet* _Packet, u32 start, u32 max_object_size)
 {
+	zone_profiler::Scope profileClientSaveSerialize(zone_profiler::Zone::ClientSaveSerialize);
 	NET_Packet& Packet = *_Packet;
 	u32 position;
 	for (; start < Objects.o_count(); start++)

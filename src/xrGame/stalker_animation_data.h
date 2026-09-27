@@ -26,4 +26,5 @@ public:
 
 public:
 	CStalkerAnimationData(IKinematicsAnimated* skeleton_animated);
+	CStalkerAnimationData(IObjectCollisionPose* pose);
 };

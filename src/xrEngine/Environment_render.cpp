@@ -215,6 +215,9 @@ void CEnvironment::RenderLast()
 
 void CEnvironment::OnDeviceCreate()
 {
+	if (!m_pRender)
+		return;
+
 	//. bNeed_re_create_env = TRUE;
 	m_pRender->OnDeviceCreate();
 	/*
@@ -250,6 +253,9 @@ void CEnvironment::OnDeviceCreate()
 
 void CEnvironment::OnDeviceDestroy()
 {
+	if (!m_pRender)
+		return;
+
 	m_pRender->OnDeviceDestroy();
 	/*
 	tsky0->surface_set (NULL);

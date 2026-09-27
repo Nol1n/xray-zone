@@ -89,8 +89,10 @@ void CEntityAlive::Load(LPCSTR section)
 	m_fFood = 100 * pSettings->r_float(section, "ph_mass");
 
 	//bloody wallmarks
+#ifndef DEDICATED_SERVER
 	if (0 == m_pBloodMarksVector)
 		LoadBloodyWallmarks(BLOOD_MARKS_SECT);
+#endif
 
 	if (0 == m_pFireParticlesVector)
 		LoadFireParticles("entity_fire_particles");
@@ -286,16 +288,20 @@ void CEntityAlive::Hit(SHit* pHDS)
 	CWound* pWound = conditions().ConditionHit(&HDS);
 	if (pWound && !pWound->GetDestroy())
 	{
+#ifndef DEDICATED_SERVER
 		if (ALife::eHitTypeBurn == HDS.hit_type || ALife::eHitTypeLightBurn == HDS.hit_type)
 			StartFireParticles(pWound);
+#endif
 	}
 
+#ifndef DEDICATED_SERVER
 	if (HDS.hit_type != ALife::eHitTypeTelepatic && HDS.hit_type != ALife::eHitTypeRadiation && HDS.hit_type != ALife::eHitTypeBurn && HDS.hit_type != ALife::eHitTypeLightBurn && HDS.hit_type != ALife::eHitTypeChemicalBurn)
 	{
 		//äîáàâèòü êðîâü íà ñòåíû
 		if (!use_simplified_visual())
 			BloodyWallmarks(HDS.damage(), HDS.dir, HDS.bone(), HDS.p_in_bone_space);
 	}
+#endif
 
 	//-------------------------------------------
 	conditions().SetConditionDeltaTime(0);
@@ -382,6 +388,13 @@ void CEntityAlive::PHFreeze()
 void CEntityAlive::BloodyWallmarks(float P, const Fvector& dir, s16 element,
                                    const Fvector& position_in_object_space)
 {
+#ifdef DEDICATED_SERVER
+	(void)P;
+	(void)dir;
+	(void)element;
+	(void)position_in_object_space;
+	return;
+#else
 	if (BI_NONE == (u16)element)
 		return;
 
@@ -408,12 +421,16 @@ void CEntityAlive::BloodyWallmarks(float P, const Fvector& dir, s16 element,
 	VERIFY(m_pBloodMarksVector);
 	PlaceBloodWallmark(dir, start_pos, m_fBloodMarkDistance,
 	                   wallmark_size, &**m_pBloodMarksVector);
+#endif
 }
 
 void CEntityAlive::PlaceBloodWallmark(const Fvector& dir, const Fvector& start_pos,
                                       float trace_dist, float wallmark_size,
                                       IWallMarkArray* pwallmarks_vector)
 {
+#ifdef DEDICATED_SERVER
+	return;
+#endif
 	collide::rq_result result;
 	BOOL reach_wall =
 		Level().ObjectSpace.RayPick(
@@ -488,6 +505,9 @@ void CEntityAlive::StartFireParticles(CWound* pWound)
 
 void CEntityAlive::UpdateFireParticles()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#else
 	CEntityCondition::WOUND_VECTOR const& wounds = conditions().wounds();
 	CEntityCondition::WOUND_VECTOR::const_iterator it = wounds.begin();
 	CEntityCondition::WOUND_VECTOR::const_iterator it_e = wounds.end();
@@ -509,6 +529,7 @@ void CEntityAlive::UpdateFireParticles()
 			                                    u32(float(m_dwMinBurnTime) * ::Random.randF(0.5f, 1.5f)));
 		}
 	}
+#endif
 }
 
 ALife::ERelationType CEntityAlive::tfGetRelationType(const CEntityAlive* tpEntityAlive) const
@@ -540,6 +561,9 @@ bool CEntityAlive::is_relation_enemy(const CEntityAlive* tpEntityAlive) const
 
 void CEntityAlive::UpdateBloodDrops()
 {
+#ifdef DEDICATED_SERVER
+	return;
+#else
 	static float m_fBloodDropTimeMax = pSettings->r_float(BLOOD_MARKS_SECT, "blood_drop_time_max");
 	static float m_fBloodDropTimeMin = pSettings->r_float(BLOOD_MARKS_SECT, "blood_drop_time_min");
 
@@ -580,6 +604,7 @@ void CEntityAlive::UpdateBloodDrops()
 			                   &**m_pBloodDropsVector);
 		}
 	}
+#endif
 }
 
 void CEntityAlive::save(NET_Packet& output_packet)

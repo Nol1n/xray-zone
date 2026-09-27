@@ -2,6 +2,10 @@
 #include "step_manager.h"
 #include "entity_alive.h"
 #include "../Include/xrRender/Kinematics.h"
+#include "xrEngine/SkeletonMotions.h"
+#include "xrEngine/object_collision_pose.h"
+#include "CharacterPhysicsSupport.h"
+#include "PHMovementControl.h"
 #include "level.h"
 #include "gamepersistent.h"
 #include "material_manager.h"
@@ -17,7 +21,8 @@ BOOL debug_step_info_load = FALSE;
 
 extern float psHUDStepSoundVolume;
 
-CStepManager::CStepManager()
+CStepManager::CStepManager()	: m_legs_count(0), m_object(nullptr), m_blend(nullptr), m_cpu_step_animation_time(0.f),
+													  m_cpu_step_last_time(0.f), m_cpu_step_clock_initialized(false), m_time_anim_started(0)
 {
 }
 
@@ -36,6 +41,16 @@ void CStepManager::reload(LPCSTR section)
 {
 	m_legs_count = pSettings->r_u8(section, "LegsCount");
 	LPCSTR anim_section = pSettings->r_string(section, "step_params");
+	m_steps_map.clear();
+	m_step_info.disable = true;
+	m_cpu_step_motion.invalidate();
+	m_cpu_step_animation_time = 0.f;
+	m_cpu_step_last_time = 0.f;
+	m_cpu_step_clock_initialized = false;
+	m_time_anim_started = 0;
+	m_blend = 0;
+	for (u32 i = 0; i < MAX_LEGS_COUNT; ++i)
+		m_foot_bones[i] = BI_NONE;
 
 	if (!pSettings->section_exist(anim_section))
 	{
@@ -53,8 +68,14 @@ void CStepManager::reload(LPCSTR section)
 	string16 cur_elem;
 
 	IKinematicsAnimated* skeleton_animated = smart_cast<IKinematicsAnimated*>(m_object->Visual());
-
-	VERIFY3(skeleton_animated, "object is not animated", m_object->cNameVisual().c_str());
+	IObjectCollisionPose* collision_pose = m_object->CollisionPose();
+	if (!skeleton_animated && !collision_pose)
+	{
+#ifdef DEBUG
+		Msg("! CStepManager::reload skipped: no CPU pose for object:%s", m_object->cName().c_str());
+#endif
+		return;
+	}
 #ifdef	DEBUG
 		if( debug_step_info_load )
 			Msg( "loading step_params for object :%s, visual: %s, section: %s, step_params section: %s  ", m_object->cName().c_str(), m_object->cNameVisual().c_str(), section, anim_section );
@@ -76,15 +97,16 @@ void CStepManager::reload(LPCSTR section)
 			VERIFY(_valid(param.step[j].power));
 		}
 
-		MotionID motion_id = skeleton_animated->ID_Cycle_Safe(anim_name);
+		MotionID motion_id;
+		if (skeleton_animated)
+			motion_id = skeleton_animated->ID_Cycle_Safe(anim_name);
+		else if (!collision_pose->find_cycle(anim_name, motion_id))
+			motion_id.invalidate();
 		if (!motion_id)
 		{
 #ifdef	DEBUG
-
-			IKinematicsAnimated *KA = smart_cast<IKinematicsAnimated*>(m_object->Visual());
-			VERIFY( KA );
-			
-			Msg( "! (CStepManager::reload) no anim :%s object:%s, visual: %s, step_params section: %s ", anim_name, m_object->cName().c_str(), m_object->cNameVisual().c_str(), anim_section );
+		Msg("! (CStepManager::reload) no step motion '%s' for object:%s, visual:%s, section:%s", anim_name,
+			m_object->cName().c_str(), m_object->cNameVisual().c_str(), anim_section);
 
 #endif
 			continue;
@@ -93,9 +115,15 @@ void CStepManager::reload(LPCSTR section)
 		if( debug_step_info_load )
 		{
 			IKinematicsAnimated *KA = smart_cast<IKinematicsAnimated*>(m_object->Visual());
-			VERIFY( KA );
-			std::pair<LPCSTR,LPCSTR> anim_name = KA->LL_MotionDefName_dbg( motion_id );
-			Msg( "step_params loaded for object :%s, visual: %s, motion: %s, anim set: %s  ", m_object->cName().c_str(), m_object->cNameVisual().c_str(), anim_name.first, anim_name.second );
+			if (KA)
+			{
+				std::pair<LPCSTR,LPCSTR> loaded_name = KA->LL_MotionDefName_dbg(motion_id);
+				Msg("step_params loaded for object:%s, visual:%s, motion:%s, anim set:%s", m_object->cName().c_str(),
+					m_object->cNameVisual().c_str(), loaded_name.first, loaded_name.second);
+			}
+			else
+				Msg("step_params loaded for CPU object:%s, motion id:%u/%u", m_object->cName().c_str(), motion_id.slot,
+					motion_id.idx);
 		}
 #endif
 		m_steps_map.insert(mk_pair(motion_id, param));
@@ -105,13 +133,126 @@ void CStepManager::reload(LPCSTR section)
 	if( m_steps_map.empty() )
 		Msg( "! no steps info loaded for :%s, section :s, step_params section: %s ", m_object->cName().c_str(), section, anim_section );
 #endif
-	// reload foot bones
-	for (u32 i = 0; i < MAX_LEGS_COUNT; i++) m_foot_bones[i] = BI_NONE;
-	reload_foot_bones();
+	// Foot bones are needed only for client-side particles. The CPU server path
+	// emits the gameplay callback from the configured phase and collision state.
+	if (skeleton_animated)
+		reload_foot_bones();
+}
 
+void CStepManager::update_cpu_footsteps(float dt_seconds)
+{
+	if (!m_object || m_object->Visual() || !std::isfinite(dt_seconds) || dt_seconds <= 0.f)
+		return;
 
-	m_time_anim_started = 0;
-	m_blend = 0;
+	IObjectCollisionPose* pose = m_object->CollisionPose();
+	if (!pose)
+		return;
+
+	SMotionPlaybackState states[MAX_CHANNELS * MAX_BLENDED];
+	int state_count = 0;
+	if (!pose->get_motion_playback_states(states, MAX_CHANNELS * MAX_BLENDED, state_count))
+		return;
+
+	const SMotionPlaybackState* locomotion = nullptr;
+	for (int i = 0; i < state_count; ++i)
+	{
+		const SMotionPlaybackState& state = states[i];
+		if (state.controller_group != 0 || state.blend_state == eMotionPlaybackBlendFalloff ||
+			state.weight <= EPS_S || !state.playing)
+			continue;
+		if (!locomotion || state.weight > locomotion->weight)
+			locomotion = &state;
+	}
+	if (!locomotion)
+	{
+		m_cpu_step_clock_initialized = false;
+		return;
+	}
+
+	const STEPS_MAP_IT step = m_steps_map.find(locomotion->id);
+	if (step == m_steps_map.end() || step->second.cycles == 0 || locomotion->time_total <= EPS_S ||
+		locomotion->speed <= EPS_S)
+	{
+		m_step_info.disable = true;
+		m_cpu_step_motion = locomotion->id;
+		m_cpu_step_clock_initialized = false;
+		return;
+	}
+
+	CCharacterPhysicsSupport* const physics = m_object->character_physics_support();
+	const bool on_ground = physics && physics->movement() &&
+		physics->movement()->Environment() == CPHMovementControl::peOnGround;
+	const bool has_material_pair = m_object->material().get_current_pair() != nullptr;
+	CGameObject* const game_object = smart_cast<CGameObject*>(m_object);
+	auto emit_footstep = [&](u32 leg) {
+		if (on_ground && has_material_pair && game_object)
+			game_object->FootStepCallback(m_step_info.params.step[leg].power, false, on_ground, false);
+	};
+
+	if (m_cpu_step_motion != locomotion->id || !m_cpu_step_clock_initialized)
+	{
+		m_cpu_step_motion = locomotion->id;
+		m_step_info.params = step->second;
+		m_step_info.disable = false;
+		m_cpu_step_animation_time = locomotion->time_current;
+		m_cpu_step_last_time = locomotion->time_current;
+		m_cpu_step_clock_initialized = true;
+		if (locomotion->time_current <= EPS_S)
+			for (u32 leg = 0; leg < m_legs_count; ++leg)
+				if (std::fabs(m_step_info.params.step[leg].time) <= EPS_S)
+					emit_footstep(leg);
+		return;
+	}
+
+	const float animation_delta = dt_seconds * locomotion->speed;
+	if (!std::isfinite(animation_delta) || animation_delta <= 0.f)
+		return;
+
+	const float total_time = locomotion->time_total;
+	float expected_phase = m_cpu_step_last_time + animation_delta;
+	if (locomotion->stop_at_end)
+		expected_phase = _min(expected_phase, total_time);
+	else
+	{
+		expected_phase = std::fmod(expected_phase, total_time);
+		if (expected_phase < 0.f)
+			expected_phase += total_time;
+	}
+	if (std::fabs(expected_phase - locomotion->time_current) > _max(0.02f, animation_delta * 0.1f))
+	{
+		// A restart/phase correction occurred outside this step clock; resync
+		// instead of synthesizing duplicate foot contacts.
+		m_cpu_step_animation_time = locomotion->time_current;
+		m_cpu_step_last_time = locomotion->time_current;
+		if (locomotion->time_current <= EPS_S)
+			for (u32 leg = 0; leg < m_legs_count; ++leg)
+				if (std::fabs(m_step_info.params.step[leg].time) <= EPS_S)
+					emit_footstep(leg);
+		return;
+	}
+
+	const float interval = total_time / float(m_step_info.params.cycles);
+	if (!std::isfinite(interval) || interval <= EPS_S)
+		return;
+
+	const float previous_time = m_cpu_step_animation_time;
+	const float current_time = previous_time + animation_delta;
+	const u64 first_cycle = static_cast<u64>(std::floor(previous_time / interval));
+	for (u32 leg = 0; leg < m_legs_count; ++leg)
+	{
+		const float step_phase = m_step_info.params.step[leg].time;
+		if (!std::isfinite(step_phase) || step_phase < 0.f || step_phase > 1.f)
+			continue;
+		float event_time = (float(first_cycle) + step_phase) * interval;
+		if (event_time <= previous_time + EPS_S)
+			event_time += interval;
+		if (event_time > current_time + EPS_S)
+			continue;
+		emit_footstep(leg);
+	}
+
+	m_cpu_step_animation_time = current_time;
+	m_cpu_step_last_time = locomotion->time_current;
 }
 
 void CStepManager::on_animation_start(MotionID motion_id, CBlend* blend)

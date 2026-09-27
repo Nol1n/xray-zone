@@ -118,24 +118,34 @@ void SGameMtlPair::Load(IReader& fs)
 	R_ASSERT(fs.find_chunk(GAMEMTLPAIR_CHUNK_BREAKING));
 	fs.r_stringZ(buf);
 	BreakingSoundsStr = buf.c_str();
+	#ifndef DEDICATED_SERVER
 	CreateSounds(BreakingSounds, *buf);
+	#endif // DEDICATED_SERVER
 
 	R_ASSERT(fs.find_chunk(GAMEMTLPAIR_CHUNK_STEP));
 	fs.r_stringZ(buf);
 	StepSoundsStr = buf.c_str();
+	#ifndef DEDICATED_SERVER
 	CreateSounds(StepSounds, *buf);
+	#endif // DEDICATED_SERVER
 
 	R_ASSERT(fs.find_chunk(GAMEMTLPAIR_CHUNK_COLLIDE));
 	fs.r_stringZ(buf);
 	CollideSoundsStr = buf.c_str();
+	#ifndef DEDICATED_SERVER
 	CreateSounds(CollideSounds, *buf);
+	#endif // DEDICATED_SERVER
 	fs.r_stringZ(buf);
 	CollideParticlesStr = buf.c_str();
+	#ifndef DEDICATED_SERVER
 	CreatePSs(CollideParticles, *buf);
+	#endif // DEDICATED_SERVER
 	fs.r_stringZ(buf);
 	//CreateMarks (CollideMarks,*buf);
 	CollideMarksStr = buf.c_str();
+	#ifndef DEDICATED_SERVER
 	CreateMarks(&*m_pCollideMarks, *buf);
+	#endif // DEDICATED_SERVER
 }
 
 void SGameMtlPair::CreateSoundsImpl(SoundVec& sounds, LPCSTR str) {

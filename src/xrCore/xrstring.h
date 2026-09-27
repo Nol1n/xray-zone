@@ -50,6 +50,9 @@ public:
 	void dump(IWriter* W);
 	void verify();
 	u32 stat_economy(u32& count);
+	// Constant-time snapshot under the existing container lock. Includes cached
+	// unreferenced strings until clean(); excludes allocator slack/refcounts.
+	void statistics(u64& entries, u64& storageBytes);
 #ifdef PROFILE_CRITICAL_SECTIONS
     str_container ():cs(MUTEX_PROFILE_ID(str_container)) {}
 #endif // PROFILE_CRITICAL_SECTIONS

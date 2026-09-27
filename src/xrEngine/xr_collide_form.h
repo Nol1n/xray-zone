@@ -6,6 +6,7 @@
 // refs
 class ENGINE_API CObject;
 class ENGINE_API CInifile;
+class IObjectCollisionPose;
 
 // t-defs
 const u32 clGET_TRIS = (1 << 0);
@@ -150,17 +151,21 @@ public:
 	};
 
 	DEFINE_VECTOR(SElement, ElementVec, ElementVecIt);
-private:
-	u64 vis_mask;
-	ElementVec elements;
+	private:
+		u64 vis_mask;
+		IObjectCollisionPose* m_pose_source;
+		IObjectCollisionPose* m_pose_override;
+		ElementVec elements;
 
 	u32 dwFrame; // The model itself
 	u32 dwFrameTL; // Top level
 
-	void BuildState();
-	void BuildTopLevel();
-public:
-	CCF_Skeleton(CObject* _owner);
+		void BuildState();
+		void BuildTopLevel();
+		IObjectCollisionPose* PoseSource() const;
+	public:
+		CCF_Skeleton(CObject* _owner);
+		CCF_Skeleton(CObject* _owner, IObjectCollisionPose* pose_override);
 
 	virtual BOOL _RayQuery(const collide::ray_defs& Q, collide::rq_results& R);
 	bool _ElementCenter(u16 elem_id, Fvector& e_center);

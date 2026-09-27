@@ -15,3 +15,10 @@ CStalkerAnimationData::CStalkerAnimationData(IKinematicsAnimated* skeleton_anima
 	m_head_animations.Load(skeleton_animated, "");
 	m_global_animations.Load(skeleton_animated, "item_");
 }
+
+CStalkerAnimationData::CStalkerAnimationData(IObjectCollisionPose* pose)
+{
+	m_part_animations.Load(pose, "");
+	m_head_animations.Load(pose, "");
+	m_global_animations.Load(pose, "item_");
+}

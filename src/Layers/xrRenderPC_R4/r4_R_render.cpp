@@ -5,6 +5,7 @@
 #include "../../xrEngine/xr_object.h"
 
 #include "../xrRender/QueryHelper.h"
+#include "../xrRender/gpu_capture.h"
 
 IC bool pred_sp_sort(ISpatial* _1, ISpatial* _2)
 {
@@ -253,6 +254,7 @@ void CRender::Render()
 
 	//.	VERIFY					(g_pGameLevel && g_pGameLevel->pHUD);
 
+	zone_gpu::mark(zone_gpu::Marker::SceneBegin);
 	// Configure
 	RImplementation.o.distortion = FALSE; // disable distorion
 	Fcolor sun_color = ((light*)Lights.sun_adapted._get())->color;
@@ -375,6 +377,7 @@ void CRender::Render()
 	if (ps_r2_ls_flags.test(R2FLAG_EXP_SPLIT_SCENE)) split_the_scene_to_minimize_wait = TRUE;
 
 	//******* Main render :: PART-0	-- first
+	zone_gpu::mark(zone_gpu::Marker::Prepared);
 	if (!split_the_scene_to_minimize_wait)
 	{
 		PIX_EVENT(DEFER_PART0_NO_SPLIT);
@@ -580,6 +583,7 @@ void CRender::Render()
 		}
 	}
 
+	zone_gpu::mark(zone_gpu::Marker::GeometryEnd);
 	// Directional light - fucking sun
 	if (bSUN) //bSUN && Device.dwFrame & 1 --Delayed sun update. Worth to check it in future
 	{
@@ -643,11 +647,13 @@ void CRender::Render()
 			Target->phase_ssfx_volumetric_blur();
 	}
 
+	zone_gpu::mark(zone_gpu::Marker::LightingEnd);
 	// Postprocess
 	{
 		PIX_EVENT(DEFER_LIGHT_COMBINE);
 		Target->phase_combine();
 	}
+	zone_gpu::mark(zone_gpu::Marker::CombineEnd);
 
 	if (Details)
 		Details->details_clear();

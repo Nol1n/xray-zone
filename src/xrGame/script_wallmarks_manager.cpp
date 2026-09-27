@@ -64,6 +64,9 @@ void ScriptWallmarksManager::PlaceWallmark(Fvector dir, Fvector start_pos,
 	float trace_dist, float wallmark_size, LPCSTR section,
 	CScriptGameObject* ignore_obj, float ttl, float rotation)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	collide::rq_result result;
 	BOOL reach_wall =
 		Level().ObjectSpace.RayPick(
@@ -97,6 +100,9 @@ void ScriptWallmarksManager::PlaceWallmark(Fvector dir, Fvector start_pos,
 void ScriptWallmarksManager::PlaceSkeletonWallmark(CScriptGameObject* obj, LPCSTR section, 
 	Fvector start, Fvector dir, float size, float ttl)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	if (!obj)
 	{
 		Msg("[ScriptWallmarksManager] object is null!");

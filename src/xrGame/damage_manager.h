@@ -28,6 +28,15 @@ private:
 	void load_section(LPCSTR section, CInifile const* ini);
 	// init default params
 	void init_bones(LPCSTR section, CInifile const* ini);
+#ifdef DEDICATED_SERVER
+	struct SCpuBoneDamageParams
+	{
+		float hit_scale;
+		float wound_scale;
+		float aim_hit_scale;
+	};
+	xr_vector<SCpuBoneDamageParams> m_cpu_bone_damage_params;
+#endif
 };
 
 #include "damage_manager_inline.h"

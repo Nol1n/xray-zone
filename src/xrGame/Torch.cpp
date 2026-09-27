@@ -31,6 +31,7 @@ extern ENGINE_API int g_current_renderer;
 
 CTorch::CTorch(void)
 {
+	#ifndef DEDICATED_SERVER
 	light_render = ::Render->light_create();
 	light_render->set_type(IRender_Light::SPOT);
 	light_render->set_shadow(true);
@@ -40,6 +41,7 @@ CTorch::CTorch(void)
 
 	m_switched_on = false;
 	glow_render = ::Render->glow_create();
+	#endif
 	lanim = 0;
 	fBrightness = 1.f;
 
@@ -151,6 +153,9 @@ void CTorch::Switch(bool light_on)
 
 	m_switched_on = light_on;
 	lightRenderState = light_on;
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	if (can_use_dynamic_lights())
 	{
 		light_render->set_active(light_on);
@@ -183,6 +188,13 @@ BOOL CTorch::net_Spawn(CSE_Abstract* DC)
 	CSE_ALifeItemTorch* torch = smart_cast<CSE_ALifeItemTorch*>(e);
 	R_ASSERT(torch);
 	cNameVisual_set(torch->get_visual());
+	#ifdef DEDICATED_SERVER
+	if (!inherited::net_Spawn(DC))
+		return FALSE;
+	m_switched_on = !!torch->m_active;
+	lightRenderState = m_switched_on;
+	return TRUE;
+	#endif
 
 	R_ASSERT(!CFORM());
 	R_ASSERT(smart_cast<IKinematics*>(Visual()));
@@ -201,6 +213,9 @@ BOOL CTorch::net_Spawn(CSE_Abstract* DC)
 
 void CTorch::LoadLightParams()
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	bool b_r2 = !!psDeviceFlags.test(rsR2);
 	b_r2 |= !!psDeviceFlags.test(rsR3);
 	b_r2 |= !!psDeviceFlags.test(rsR4); //Alundaio
@@ -284,6 +299,9 @@ void CTorch::OnH_B_Independent(bool just_before_destroy)
 void CTorch::SwitchLightOnly()
 {
 	lightRenderState = !lightRenderState;
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 
 	if (can_use_dynamic_lights())
 	{
@@ -308,6 +326,9 @@ extern BOOL r_optimize_torch = TRUE;
 void CTorch::UpdateCL()
 {
 	inherited::UpdateCL();
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 
 	if (!m_switched_on) return;
 
@@ -473,6 +494,9 @@ void CTorch::ResetLanim()
 		if (lanim->cName != def_lanim)
 			lanim = LALib.FindItem(def_lanim);
 	}
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 
 	if (can_use_dynamic_lights())
 	{

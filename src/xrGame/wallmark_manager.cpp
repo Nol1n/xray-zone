@@ -26,6 +26,9 @@ void CWalmarkManager::AddWallmark(const Fvector& dir, const Fvector& start_pos,
                                   float range, float wallmark_size,
                                   IWallMarkArray& wallmarks_vector, int t)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	CDB::TRI* pTri = Level().ObjectSpace.GetStaticTris() + t; //result.element;
 	SGameMtl* pMaterial = GMLib.GetMaterialByIdx(pTri->material);
 
@@ -85,6 +88,9 @@ void CWalmarkManager::PlaceWallmark(const Fvector& dir, const Fvector& start_pos
 
 void CWalmarkManager::PlaceWallmarks(const Fvector& start_pos)
 {
+	#ifdef DEDICATED_SERVER
+	return;
+	#endif
 	m_pos = start_pos;
 	//.	LPCSTR				sect				= pSettings->r_string(m_owner->cNameSect(), "wallmark_section");
 	Load("explosion_marks");

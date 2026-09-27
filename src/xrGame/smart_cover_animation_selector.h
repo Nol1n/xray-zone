@@ -40,6 +40,7 @@ namespace smart_cover
 
 	private:
 		action_base* current_operator() const;
+		bool find_cycle(LPCSTR name, MotionID& result) const;
 
 	public:
 		animation_selector(CAI_Stalker* object);

@@ -596,7 +596,20 @@ void CEnvironment::OnFrame()
     }
     if (!psDeviceFlags.is(rsEnvironment)) return;
 #else
+	#ifdef DEDICATED_SERVER
+	// Keep the CPU weather state current for simulation code, but do not enter
+	// renderer-owned environment effects in a headless server build.
+	if (!g_pGameLevel || !CurrentEnv || !CurrentWeather || !Current[0] || !Current[1])
+		return;
+	{
+		float current_weight;
+		lerp(current_weight);
+		calculate_config_sun_dir();
+		return;
+	}
+	#else
 	if (!g_pGameLevel) return;
+	#endif
 #endif
 
 	// Min wind velocity. [ ps_ssfx_wind_trees.w 0 ~ 1 ]
@@ -619,7 +632,7 @@ void CEnvironment::OnFrame()
 
 	// Igor. Dynamic sun position.
 	//AVO: allow sun to move as defined in configs
-#ifdef DYNAMIC_SUN_MOVEMENT
+#if defined(DYNAMIC_SUN_MOVEMENT) && !defined(DEDICATED_SERVER)
     if (!::Render->is_sun_static() && fGameTime > 18000.f && fGameTime < 79000.f)
         calculate_dynamic_sun_dir();
 #endif

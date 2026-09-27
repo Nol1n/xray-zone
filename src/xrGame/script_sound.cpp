@@ -48,6 +48,11 @@ static float script_sound_hook_volume_mult(LPCSTR file, const Fvector* pos, CScr
 CScriptSound::CScriptSound(LPCSTR caSoundName, ESoundTypes sound_type)
 {
 	m_caSoundToPlay = caSoundName;
+	#ifdef DEDICATED_SERVER
+	// Lua scripts still construct sound wrappers on a headless server. Keep the
+	// script object valid while leaving its unavailable audio backend untouched.
+	(void)sound_type;
+	#else
 	string_path l_caFileName;
 	VERIFY(::Sound) ;
 	if (FS.exist(l_caFileName, "$game_sounds$", caSoundName, ".ogg"))
@@ -57,19 +62,25 @@ CScriptSound::CScriptSound(LPCSTR caSoundName, ESoundTypes sound_type)
 		ai().script_engine().script_log(ScriptStorage::eLuaMessageTypeError, "File not found \"%s\"!", l_caFileName);
 		m_sound.create("$no_sound.ogg", st_Effect, sound_type);
 	}
+	#endif // DEDICATED_SERVER
 }
 
 CScriptSound::~CScriptSound()
 {
+#ifndef DEDICATED_SERVER
 #ifdef DEBUG
 	THROW3(!m_sound._feedback(), "playing sound is not completed, but is destroying",
 	       m_sound._handle() ? m_sound._handle()->file_name() : "unknown");
 #endif
 	m_sound.destroy();
+#endif // DEDICATED_SERVER
 }
 
 Fvector CScriptSound::GetPosition() const
 {
+#ifdef DEDICATED_SERVER
+	return Fvector().set(0.f, 0.f, 0.f);
+#else
 	VERIFY(m_sound._handle());
 	const CSound_params* l_tpSoundParams = m_sound.get_params();
 	if (l_tpSoundParams)
@@ -80,10 +91,16 @@ Fvector CScriptSound::GetPosition() const
 		                                "Sound was not launched, can't get position!");
 		return (Fvector().set(0, 0, 0));
 	}
+#endif // DEDICATED_SERVER
 }
 
 void CScriptSound::Play(CScriptGameObject* object, float delay, int flags)
 {
+	#ifdef DEDICATED_SERVER
+	(void)object;
+	(void)delay;
+	(void)flags;
+	#else
 	THROW3(m_sound._handle(), "There is no sound", *m_caSoundToPlay);
 	//	Msg							("%6d : CScriptSound::Play (%s), delay %f, flags %d",Device.dwTimeGlobal,m_sound._handle()->file_name(),delay,flags);
 	float volume_mult = script_sound_hook_volume_mult(*m_caSoundToPlay, NULL, object);
@@ -92,10 +109,17 @@ void CScriptSound::Play(CScriptGameObject* object, float delay, int flags)
 	m_sound.play((object) ? &object->object() : NULL, flags, delay);
 	if (volume_mult < 1.0f)
 		m_sound.set_volume(volume_mult);
+	#endif // DEDICATED_SERVER
 }
 
 void CScriptSound::PlayAtPos(CScriptGameObject* object, const Fvector& position, float delay, int flags)
 {
+	#ifdef DEDICATED_SERVER
+	(void)object;
+	(void)position;
+	(void)delay;
+	(void)flags;
+	#else
 	THROW3(m_sound._handle(), "There is no sound", *m_caSoundToPlay);
 	//	Msg							("%6d : CScriptSound::Play (%s), delay %f, flags %d",m_sound._handle()->file_name(),delay,flags);
 	float volume_mult = script_sound_hook_volume_mult(*m_caSoundToPlay, &position, object);
@@ -104,15 +128,25 @@ void CScriptSound::PlayAtPos(CScriptGameObject* object, const Fvector& position,
 	m_sound.play_at_pos((object) ? &object->object() : NULL, position, flags, delay);
 	if (volume_mult < 1.0f)
 		m_sound.set_volume(volume_mult);
+	#endif // DEDICATED_SERVER
 }
 
 void CScriptSound::PlayNoFeedback(CScriptGameObject* object, u32 flags/*!< Looping */, float delay/*!< Delay */,
                                   Fvector pos, float vol, float freq)
 {
+	#ifdef DEDICATED_SERVER
+	(void)object;
+	(void)flags;
+	(void)delay;
+	(void)pos;
+	(void)vol;
+	(void)freq;
+	#else
 	THROW3(m_sound._handle(), "There is no sound", *m_caSoundToPlay);
 	float volume_mult = script_sound_hook_volume_mult(*m_caSoundToPlay, &pos, object);
 	if (volume_mult <= EPS_S)
 		return;
 	vol *= volume_mult;
 	m_sound.play_no_feedback((object) ? &object->object() : NULL, flags, delay, &pos, &vol, &freq);
+	#endif // DEDICATED_SERVER
 }

@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "../../../../xrEngine/zone_profiler.h"
 #include "base_monster.h"
 #include "../ai_monster_squad.h"
 #include "../ai_monster_squad_manager.h"
@@ -12,6 +13,7 @@
 
 void CBaseMonster::Think()
 {
+	zone_profiler::Scope profileAI(zone_profiler::Zone::AI);
 	START_PROFILE("Base Monster/Think")
 		;
 
