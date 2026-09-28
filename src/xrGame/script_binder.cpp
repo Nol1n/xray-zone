@@ -11,6 +11,7 @@
 #include "script_engine.h"
 #include "script_binder.h"
 #include "xrServer_Objects_ALife.h"
+#include "xrServer_Objects_ALife_Monsters.h"
 #include "script_binder_object.h"
 #include "script_game_object.h"
 #include "gameobject.h"
@@ -142,6 +143,28 @@ BOOL CScriptBinder::net_Spawn(CSE_Abstract* DC)
 	CSE_ALifeObject* object = smart_cast<CSE_ALifeObject*>(abstract);
 	if (object && m_object)
 	{
+		// Remote NPC presentation: when a single-game-type client is connected
+		// to a dedicated ALife server, server-owned NPC replicas (stalkers,
+		// traders, monsters) must spawn as native presentation objects only.
+		// Their script binder targets the authoritative owner and rejects
+		// remote replicas, so unbind it and skip the script spawn instead of
+		// failing the whole spawn. The local player actor
+		// (M_SPAWN_OBJECT_LOCAL), true offline singleplayer (OnServer()) and
+		// the dedicated server (no binders at all) are left untouched.
+		if (IsGameTypeSingle() && OnClient() && !g_dedicated_server &&
+		    !object->s_flags.is(M_SPAWN_OBJECT_LOCAL))
+		{
+			CSE_ALifeMonsterAbstract* monster = object->cast_monster_abstract();
+			CSE_ALifeTrader* trader = object->cast_trader();
+			if (monster || trader)
+			{
+				if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+					Msg("* [zone-client-spawn] remote NPC presentation, skipping script binder: section=%s id=%u",
+					    *object->s_name, object->ID);
+				clear();
+				return (TRUE);
+			}
+		}
 		try
 		{
 			const BOOL spawnSucceeded = (BOOL)m_object->net_Spawn(object);
