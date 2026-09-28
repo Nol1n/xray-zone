@@ -23,6 +23,9 @@
 #include "profiler.h"
 #include "../xrEngine/zone_profiler.h"
 #include "mt_config.h"
+#ifdef DEDICATED_SERVER
+#include "../xrEngine/DedicatedServer.h"
+#endif // DEDICATED_SERVER
 
 using namespace ALife;
 #ifdef	ENGINE_LUA_ALIFE_UPDAGE_MANAGER_CALLBACKS
@@ -113,6 +116,21 @@ void CALifeUpdateManager::update_scheduled(bool init_ef)
 
 void CALifeUpdateManager::update()
 {
+#ifdef DEDICATED_SERVER
+	static volatile LONG xrz_alife_tick_count = 0;
+	const LONG xrz_alife_ticks = InterlockedIncrement(&xrz_alife_tick_count);
+	if ((xrz_alife_ticks % 100L) == 0L)
+	{
+		string256 xrz_alife_tick_trace;
+		xr_sprintf(
+			xrz_alife_tick_trace,
+			sizeof(xrz_alife_tick_trace),
+			"[XRZ:ALIFE:TICK] ticks=%u objects=%u",
+			(unsigned)xrz_alife_ticks,
+			(unsigned)objects().objects().size());
+		TraceDedicatedServerBootstrap(xrz_alife_tick_trace);
+	}
+#endif // DEDICATED_SERVER
 	zone_profiler::Scope profileAlifeUpdate(zone_profiler::Zone::ALifeUpdate);
 	update_switch();
 	update_scheduled(false);
@@ -246,9 +264,6 @@ bool CALifeUpdateManager::change_level(NET_Packet& net_packet)
 }
 
 #include "../xrEngine/igame_persistent.h"
-#ifdef DEDICATED_SERVER
-#include "../xrEngine/DedicatedServer.h"
-#endif // DEDICATED_SERVER
 
 void CALifeUpdateManager::new_game(LPCSTR save_name)
 {
