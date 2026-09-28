@@ -119,7 +119,7 @@ void CALifeUpdateManager::update()
 #ifdef DEDICATED_SERVER
 	static volatile LONG xrz_alife_tick_count = 0;
 	const LONG xrz_alife_ticks = InterlockedIncrement(&xrz_alife_tick_count);
-	if ((xrz_alife_ticks % 100L) == 0L)
+	if ((xrz_alife_ticks == 1L) || ((xrz_alife_ticks % 100L) == 0L))
 	{
 		string256 xrz_alife_tick_trace;
 		xr_sprintf(
@@ -139,13 +139,61 @@ void CALifeUpdateManager::update()
 
 void CALifeUpdateManager::shedule_Update(u32 dt)
 {
+#ifdef DEDICATED_SERVER
+	static volatile LONG xrz_alife_sched_call_count = 0;
+	const LONG xrz_alife_sched_calls = InterlockedIncrement(&xrz_alife_sched_call_count);
+	if ((xrz_alife_sched_calls == 1L) || ((xrz_alife_sched_calls % 100L) == 0L))
+	{
+		string256 xrz_alife_sched_trace;
+		xr_sprintf(
+			xrz_alife_sched_trace,
+			sizeof(xrz_alife_sched_trace),
+			"[XRZ:ALIFE:SCHED] calls=%u initialized=%u mt_alife=%u first_time=%u",
+			(unsigned)xrz_alife_sched_calls,
+			(unsigned)initialized(),
+			(unsigned)g_mt_config.test(mtALife),
+			(unsigned)m_first_time);
+		TraceDedicatedServerBootstrap(xrz_alife_sched_trace);
+	}
+#endif // DEDICATED_SERVER
+
 	ISheduled::shedule_Update(dt);
 
 	if (!initialized())
+	{
+#ifdef DEDICATED_SERVER
+		static volatile LONG xrz_alife_sched_not_init_count = 0;
+		const LONG xrz_alife_sched_not_init = InterlockedIncrement(&xrz_alife_sched_not_init_count);
+		if ((xrz_alife_sched_not_init == 1L) || ((xrz_alife_sched_not_init % 100L) == 0L))
+		{
+			string256 xrz_alife_sched_trace;
+			xr_sprintf(
+				xrz_alife_sched_trace,
+				sizeof(xrz_alife_sched_trace),
+				"[XRZ:ALIFE:SCHED] branch=not_initialized decisions=%u",
+				(unsigned)xrz_alife_sched_not_init);
+			TraceDedicatedServerBootstrap(xrz_alife_sched_trace);
+		}
+#endif // DEDICATED_SERVER
 		return;
+	}
 
 	if (!m_first_time && g_mt_config.test(mtALife))
 	{
+#ifdef DEDICATED_SERVER
+		static volatile LONG xrz_alife_sched_enqueue_count = 0;
+		const LONG xrz_alife_sched_enqueue = InterlockedIncrement(&xrz_alife_sched_enqueue_count);
+		if ((xrz_alife_sched_enqueue == 1L) || ((xrz_alife_sched_enqueue % 100L) == 0L))
+		{
+			string256 xrz_alife_sched_trace;
+			xr_sprintf(
+				xrz_alife_sched_trace,
+				sizeof(xrz_alife_sched_trace),
+				"[XRZ:ALIFE:SCHED] branch=seqparallel_enqueue decisions=%u",
+				(unsigned)xrz_alife_sched_enqueue);
+			TraceDedicatedServerBootstrap(xrz_alife_sched_trace);
+		}
+#endif // DEDICATED_SERVER
 		Device.seqParallel.push_back(
 			fastdelegate::FastDelegate0<>(
 				this,
@@ -154,6 +202,23 @@ void CALifeUpdateManager::shedule_Update(u32 dt)
 		);
 		return;
 	}
+
+#ifdef DEDICATED_SERVER
+	{
+		static volatile LONG xrz_alife_sched_inline_count = 0;
+		const LONG xrz_alife_sched_inline = InterlockedIncrement(&xrz_alife_sched_inline_count);
+		if ((xrz_alife_sched_inline == 1L) || ((xrz_alife_sched_inline % 100L) == 0L))
+		{
+			string256 xrz_alife_sched_trace;
+			xr_sprintf(
+				xrz_alife_sched_trace,
+				sizeof(xrz_alife_sched_trace),
+				"[XRZ:ALIFE:SCHED] branch=inline decisions=%u",
+				(unsigned)xrz_alife_sched_inline);
+			TraceDedicatedServerBootstrap(xrz_alife_sched_trace);
+		}
+	}
+#endif // DEDICATED_SERVER
 
 	m_first_time = false;
 
