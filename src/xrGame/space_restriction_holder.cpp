@@ -14,6 +14,9 @@
 #include "space_restriction_shape.h"
 #include "space_restriction_composition.h"
 #include "restriction_space.h"
+#ifdef DEDICATED_SERVER
+#include "../xrEngine/DedicatedServer.h"
+#endif // DEDICATED_SERVER
 
 #pragma warning(push)
 #pragma warning(disable:4995)
@@ -116,16 +119,30 @@ void CSpaceRestrictionHolder::register_restrictor(CSpaceRestrictor* space_restri
                                                   const RestrictionSpace::ERestrictorTypes& restrictor_type)
 {
 	string4096 m_temp_string;
-	shared_str space_restrictors = space_restrictor->cName();
-	if (restrictor_type != RestrictionSpace::eDefaultRestrictorTypeNone)
+	if (restrictor_type == RestrictionSpace::eRestrictorTypeNone)
+		return;
+
+	const bool default_out = restrictor_type == RestrictionSpace::eDefaultRestrictorTypeOut;
+	const bool default_in = restrictor_type == RestrictionSpace::eDefaultRestrictorTypeIn;
+	const bool named_restrictor = restrictor_type == RestrictionSpace::eRestrictorTypeIn ||
+	                              restrictor_type == RestrictionSpace::eRestrictorTypeOut;
+	if (restrictor_type != RestrictionSpace::eDefaultRestrictorTypeNone && !default_out && !default_in &&
+	    !named_restrictor)
 	{
-		shared_str *temp = 0, temp1;
-		if (restrictor_type == RestrictionSpace::eDefaultRestrictorTypeOut)
-			temp = &m_default_out_restrictions;
-		else if (restrictor_type == RestrictionSpace::eDefaultRestrictorTypeIn)
-			temp = &m_default_in_restrictions;
-		else
-			NODEFAULT;
+		NODEFAULT;
+		return;
+	}
+
+	shared_str space_restrictors = space_restrictor->cName();
+#ifdef DEDICATED_SERVER
+	if (DedicatedServerStartLevel())
+		Msg("* [zone-server] registering restrictor name=%s type=%u", *space_restrictors,
+		    static_cast<u32>(restrictor_type));
+#endif // DEDICATED_SERVER
+	if (default_out || default_in)
+	{
+		shared_str* temp = default_out ? &m_default_out_restrictions : &m_default_in_restrictions;
+		shared_str temp1;
 		temp1 = *temp;
 
 		if (xr_strlen(*temp) && xr_strlen(space_restrictors))
@@ -139,9 +156,7 @@ void CSpaceRestrictionHolder::register_restrictor(CSpaceRestrictor* space_restri
 			on_default_restrictions_changed();
 	}
 
-	CSpaceRestrictionShape* shape = xr_new<CSpaceRestrictionShape>(space_restrictor,
-	                                                               restrictor_type != RestrictionSpace::
-	                                                               eDefaultRestrictorTypeNone);
+	CSpaceRestrictionShape* shape = xr_new<CSpaceRestrictionShape>(space_restrictor, default_out || default_in);
 	RESTRICTIONS::iterator I = m_restrictions.find(space_restrictors);
 	if (I == m_restrictions.end())
 	{

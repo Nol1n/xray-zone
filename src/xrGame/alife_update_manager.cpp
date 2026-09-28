@@ -246,6 +246,9 @@ bool CALifeUpdateManager::change_level(NET_Packet& net_packet)
 }
 
 #include "../xrEngine/igame_persistent.h"
+#ifdef DEDICATED_SERVER
+#include "../xrEngine/DedicatedServer.h"
+#endif // DEDICATED_SERVER
 
 void CALifeUpdateManager::new_game(LPCSTR save_name)
 {
@@ -262,6 +265,16 @@ void CALifeUpdateManager::new_game(LPCSTR save_name)
 	VERIFY(can_register_objects());
 
 	can_register_objects(false);
+
+#ifdef DEDICATED_SERVER
+	const char* dedicated_start_level = DedicatedServerStartLevel();
+	if (dedicated_start_level)
+	{
+		Msg("* [zone-server] selecting active A-Life level: %s", dedicated_start_level);
+		R_ASSERT2(graph().set_initial_level(dedicated_start_level), "Invalid or unavailable dedicated server level");
+	}
+#endif // DEDICATED_SERVER
+
 	spawn_new_objects();
 	can_register_objects(true);
 

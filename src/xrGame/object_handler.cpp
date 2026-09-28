@@ -28,6 +28,7 @@
 #include "effectorshot.h"
 
 extern int g_ai_unlimited_ammo;
+extern ENGINE_API bool g_dedicated_server;
 
 CObjectHandler::CObjectHandler()
 {
@@ -51,10 +52,20 @@ void CObjectHandler::reinit(CAI_Stalker* object)
 	inherited::reinit();
 	m_hammer_is_clutched = false;
 	planner().setup(object);
-	IKinematics* kinematics = smart_cast<IKinematics*>(planner().m_object->Visual());
-	m_r_hand = kinematics->LL_BoneID(pSettings->r_string(*planner().m_object->cNameSect(), "weapon_bone0"));
-	m_l_finger1 = kinematics->LL_BoneID(pSettings->r_string(*planner().m_object->cNameSect(), "weapon_bone1"));
-	m_r_finger2 = kinematics->LL_BoneID(pSettings->r_string(*planner().m_object->cNameSect(), "weapon_bone2"));
+#ifdef DEDICATED_SERVER
+	if (g_dedicated_server)
+	{
+		// Hand bone indices are presentation data; headless entities have no visual skeleton.
+		m_r_hand = m_l_finger1 = m_r_finger2 = -1;
+	}
+	else
+#endif // DEDICATED_SERVER
+	{
+		IKinematics* kinematics = smart_cast<IKinematics*>(planner().m_object->Visual());
+		m_r_hand = kinematics->LL_BoneID(pSettings->r_string(*planner().m_object->cNameSect(), "weapon_bone0"));
+		m_l_finger1 = kinematics->LL_BoneID(pSettings->r_string(*planner().m_object->cNameSect(), "weapon_bone1"));
+		m_r_finger2 = kinematics->LL_BoneID(pSettings->r_string(*planner().m_object->cNameSect(), "weapon_bone2"));
+	}
 	m_strap_object_id = ALife::_OBJECT_ID(-1);
 	m_strap_bone0 = -1;
 	m_strap_bone1 = -1;
@@ -166,6 +177,14 @@ bool CObjectHandler::goal_reached()
 
 void CObjectHandler::weapon_bones(int& b0, int& b1, int& b2) const
 {
+#ifdef DEDICATED_SERVER
+	if (g_dedicated_server)
+	{
+		b0 = b1 = b2 = -1;
+		return;
+	}
+#endif // DEDICATED_SERVER
+
 	CWeapon* weapon = smart_cast<CWeapon*>(inventory().ActiveItem());
 	if (!weapon || !planner().m_storage.property(ObjectHandlerSpace::eWorldPropertyStrapped))
 	{

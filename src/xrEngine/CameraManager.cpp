@@ -535,6 +535,9 @@ void CCameraManager::ApplyDevice(float _viewport_near)
 
 void CCameraManager::ResetPP()
 {
+	if (g_dedicated_server)
+		return;
+
 	IRender_Target* T = ::Render->getTarget();
 	T->set_duality_h(pp_identity.duality.h);
 	T->set_duality_v(pp_identity.duality.v);

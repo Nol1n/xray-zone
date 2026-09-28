@@ -343,6 +343,11 @@ char* mov_state[] = {
 
 void CActor::g_SetAnimation(u32 mstate_rl)
 {
+#ifdef DEDICATED_SERVER
+	// Headless actors have no IKinematics visual; movement state and physics are updated separately.
+	(void)mstate_rl;
+	return;
+#else
 	if (!g_Alive())
 	{
 		if (m_current_legs || m_current_torso)
@@ -417,6 +422,7 @@ void CActor::g_SetAnimation(u32 mstate_rl)
 		moving_idx = STorsoWpn::eSprint;
 	}
 
+	#ifndef DEDICATED_SERVER
 	if (this == Level().CurrentViewEntity())
 	{
 		if (mstate_rl & mcAnyMove)
@@ -438,6 +444,7 @@ void CActor::g_SetAnimation(u32 mstate_rl)
 		if (!(mstate_old & mcAnyMove) && (mstate_rl & mcAnyMove) || (mstate_old & mcAnyMove) && !(mstate_rl & mcAnyMove))
 			g_player_hud->OnMovementChanged(mcAnyMove);
 	};
+	#endif // DEDICATED_SERVER
 
 	//-----------------------------------------------------------------------
 	// Torso
@@ -780,4 +787,5 @@ void CActor::g_SetAnimation(u32 mstate_rl)
 
 	m_current_torso_blend->timeCurrent = m_current_legs_blend->timeCurrent / m_current_legs_blend->timeTotal *
 		m_current_torso_blend->timeTotal;
+#endif // DEDICATED_SERVER
 }

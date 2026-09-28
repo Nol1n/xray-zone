@@ -57,6 +57,7 @@ protected:
 
 protected:
 	void setup_current_level();
+	void setup_current_level(GameGraph::_LEVEL_ID level_id);
 	template <typename F, typename C>
 	IC void iterate(C& c, const F& f);
 
@@ -65,6 +66,7 @@ public:
 	virtual ~CALifeGraphRegistry();
 	void on_load();
 	void update(CSE_ALifeDynamicObject* object);
+	bool set_initial_level(const char* level_name);
 	void attach(CSE_Abstract& object, CSE_ALifeInventoryItem* item, GameGraph::_GRAPH_ID game_vertex_id,
 	            bool alife_query = true, bool add_children = true);
 	void detach(CSE_Abstract& object, CSE_ALifeInventoryItem* item, GameGraph::_GRAPH_ID game_vertex_id,

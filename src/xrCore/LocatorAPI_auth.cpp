@@ -46,6 +46,9 @@ void CLocatorAPI::auth_runtime(void* params)
 	CMemoryWriter writer;
 	pSettingsAuth->save_as(writer);
 	m_auth_code = crc32(writer.pointer(), writer.size());
+	const bool traceAuthInputs = Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace");
+	if (traceAuthInputs)
+		Msg("* [zone-auth] settings crc=%08x", static_cast<u32>(m_auth_code));
 
 #ifdef DEBUG
     if (strstr(Core.Params, "auth_debug"))
@@ -89,6 +92,8 @@ void CLocatorAPI::auth_runtime(void* params)
 					IReader* r = FS.r_open(f.name);
 					if (!r)
 					{
+						if (traceAuthInputs)
+							Msg("! [zone-auth] unable to read %s", f.name);
 						do_break = true;
 						break;
 					}
@@ -111,6 +116,9 @@ void CLocatorAPI::auth_runtime(void* params)
         Msg("auth_code = %d", m_auth_code);
 #endif // DEBUG
 	}
+	if (traceAuthInputs)
+		Msg("* [zone-auth] generated checksum=%08x%08x",
+			static_cast<u32>(m_auth_code >> 32), static_cast<u32>(m_auth_code));
 #ifdef DEBUG
     else
     {

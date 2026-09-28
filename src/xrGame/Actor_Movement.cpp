@@ -318,6 +318,7 @@ void CActor::g_cl_CheckControls(u32 mstate_wf, Fvector& vControlAccel, float& Ju
 		} //(mstate_real&mcAnyMove)
 	} //peOnGround || peAtWall
 
+	#ifndef DEDICATED_SERVER
 	if (IsGameTypeSingle() && cam_eff_factor > EPS)
 	{
 		LPCSTR state_anm = NULL;
@@ -364,6 +365,7 @@ void CActor::g_cl_CheckControls(u32 mstate_wf, Fvector& vControlAccel, float& Ju
 			}
 		}
 	}
+	#endif // DEDICATED_SERVER
 	//transform local dir to world dir
 	Fmatrix mOrient;
 	mOrient.rotateY(-r_model_yaw);
@@ -498,6 +500,12 @@ bool CActor::g_LadderOrient()
 // ****************************** Update actor orientation according to camera orientation
 void CActor::g_cl_Orientate(u32 mstate_rl, float dt)
 {
+#ifdef DEDICATED_SERVER
+	// Dedicated actor orientation comes from server/network state, not a local camera.
+	(void)mstate_rl;
+	(void)dt;
+	return;
+#else
 	// capture camera into torso (only for FirstEye & LookAt cameras)
 	if (eacFreeLook != cam_active)
 	{
@@ -569,6 +577,7 @@ void CActor::g_cl_Orientate(u32 mstate_rl, float dt)
             }
         }
     }
+#endif // DEDICATED_SERVER
 }
 
 void CActor::g_sv_Orientate(u32 /**mstate_rl/**/, float /**dt/**/)
@@ -649,18 +658,22 @@ bool CActor::CanMove()
 {
 	if (conditions().IsCantWalk())
 	{
+#ifndef DEDICATED_SERVER
 		if (mstate_wishful & mcAnyMove)
 		{
 			CurrentGameUI()->AddCustomStatic("cant_walk", true);
 		}
+#endif // DEDICATED_SERVER
 		return false;
 	}
 	else if (conditions().IsCantWalkWeight())
 	{
+#ifndef DEDICATED_SERVER
 		if (mstate_wishful & mcAnyMove)
 		{
 			CurrentGameUI()->AddCustomStatic("cant_walk_weight", true);
 		}
+#endif // DEDICATED_SERVER
 		return false;
 	}
 
@@ -675,10 +688,12 @@ void CActor::StopAnyMove()
 	mstate_wishful &= ~mcAnyMove;
 	mstate_real &= ~mcAnyMove;
 
+	#ifndef DEDICATED_SERVER
 	if (this == Level().CurrentViewEntity())
 	{
 		g_player_hud->OnMovementChanged((EMoveCommand)0);
 	}
+	#endif // DEDICATED_SERVER
 }
 
 

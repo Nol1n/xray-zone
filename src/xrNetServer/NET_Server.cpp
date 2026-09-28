@@ -184,6 +184,18 @@ IPureServer::_Recieve(const void* data, u32 data_size, u32 param)
 
 	id.set(param);
 	packet.construct(data, data_size);
+	if (strstr(Core.Params, "-zone_server_bootstrap_trace"))
+	{
+		static u32 tracedPackets = 0;
+		if (tracedPackets < 32)
+		{
+			u16 packetType = 0;
+			packet.r_begin(packetType);
+			Msg("* [zone-server-net] application packet type=%u from client=%u", packetType, id.value());
+			packet.r_pos = 0;
+			++tracedPackets;
+		}
+	}
 	//DWORD currentThreadId = GetCurrentThreadId();
 	//Msg("-S- Entering to csMessages from _Receive [%d]", currentThreadId);
 	csMessage.Enter();
@@ -247,7 +259,10 @@ IPureServer::EConnect IPureServer::Connect(LPCSTR options, GameDescriptionData& 
 	connect_options = options;
 	psNET_direct_connect = FALSE;
 
-	if (strstr(options, "/single"))
+	// Single-player sessions normally use an in-process server/client pair. A
+	// dedicated host must keep the ALife single-player game rules but expose the
+	// server through the network transport so external clients can join it.
+	if (strstr(options, "/single") && !m_bDedicated)
 		psNET_direct_connect = TRUE;
 
 	// Parse options
@@ -296,7 +311,10 @@ IPureServer::EConnect IPureServer::Connect(LPCSTR options, GameDescriptionData& 
 		else
 			strncpy_s(tmpStr, ServerPort, 63);
 		dwServerPort = atol(tmpStr);
-		clamp(dwServerPort, u32(START_PORT), u32(END_PORT));
+		if (dwServerPort <= END_PORT_LAN)
+			clamp(dwServerPort, u32(START_PORT_LAN_SV), u32(END_PORT_LAN));
+		else
+			clamp(dwServerPort, u32(START_PORT), u32(END_PORT));
 		bPortWasSet = TRUE; //this is not casual game
 	}
 	//-------------------------------------------------------------------
@@ -463,6 +481,15 @@ void IPureServer::Disconnect()
 HRESULT IPureServer::net_Handler(u32 dwMessageType, PVOID pMessage)
 {
 	// HRESULT     hr = S_OK;
+	if (strstr(Core.Params, "-zone_server_bootstrap_trace"))
+	{
+		static u32 tracedCallbacks = 0;
+		if (tracedCallbacks < 32)
+		{
+			Msg("* [zone-server-net] DirectPlay callback type=%u", dwMessageType);
+			++tracedCallbacks;
+		}
+	}
 
 	switch (dwMessageType)
 	{

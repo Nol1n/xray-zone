@@ -43,6 +43,21 @@
 #include "UITabControl.h"
 #include "UITrackBar.h"
 
+#ifdef DEDICATED_SERVER
+// Mod scripts can resolve these bindings while loading their settings, but a
+// dedicated server has no UI/font manager. Returning no font keeps those
+// presentation-only queries from dereferencing UI() during script startup.
+CGameFont* GetFontSmall() { return nullptr; }
+CGameFont* GetFontMedium() { return nullptr; }
+CGameFont* GetFontDI() { return nullptr; }
+CGameFont* GetFontGraffiti19Russian() { return nullptr; }
+CGameFont* GetFontGraffiti22Russian() { return nullptr; }
+CGameFont* GetFontLetterica16Russian() { return nullptr; }
+CGameFont* GetFontLetterica18Russian() { return nullptr; }
+CGameFont* GetFontGraffiti32Russian() { return nullptr; }
+CGameFont* GetFontGraffiti50Russian() { return nullptr; }
+CGameFont* GetFontLetterica25() { return nullptr; }
+#else
 CFontManager& mngr()
 {
 	return UI().Font();
@@ -99,6 +114,7 @@ CGameFont* GetFontLetterica25()
 {
 	return mngr().pFontLetterica25;
 }
+#endif // DEDICATED_SERVER
 
 
 int GetARGB(u16 a, u16 r, u16 g, u16 b)

@@ -115,12 +115,23 @@ void CLevel::g_sv_Spawn(CSE_Abstract* E)
 #ifdef DEBUG_MEMORY_MANAGER
 	mem_alloc_gather_stats		(false);
 #endif // DEBUG_MEMORY_MANAGER
-	if (0 == O || (!O->net_Spawn(E)))
+	const bool spawnSucceeded = O && O->net_Spawn(E);
+	if (!spawnSucceeded)
 	{
-		O->net_Destroy();
-		if (!g_dedicated_server)
-			client_spawn_manager().clear(O->ID());
-		Objects.Destroy(O);
+		if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+		{
+			const char* failureStage = O ? "net_Spawn" : "Objects.Create";
+			Msg("* [zone-client-spawn] failed stage=%s section=%s id=%u parent=%u pos=(%.2f,%.2f,%.2f)",
+				failureStage, *E->s_name, E->ID, E->ID_Parent,
+				E->o_Position.x, E->o_Position.y, E->o_Position.z);
+		}
+		if (O)
+		{
+			O->net_Destroy();
+			if (!g_dedicated_server)
+				client_spawn_manager().clear(O->ID());
+			Objects.Destroy(O);
+		}
 		Msg("! Failed to spawn entity '%s'", *E->s_name);
 #ifdef DEBUG_MEMORY_MANAGER
 		mem_alloc_gather_stats	(!!psAI_Flags.test(aiDebugOnFrameAllocs));
@@ -157,6 +168,10 @@ void CLevel::g_sv_Spawn(CSE_Abstract* E)
 				SetControlEntity(O);
 				SetEntity(O); //do not switch !!!
 			}
+			if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+				Msg("* [zone-client-spawn] local actor section=%s id=%u parent=%u pos=(%.2f,%.2f,%.2f)",
+					*E->s_name, E->ID, E->ID_Parent,
+					E->o_Position.x, E->o_Position.y, E->o_Position.z);
 		}
 
 		if (0xffff != E->ID_Parent)

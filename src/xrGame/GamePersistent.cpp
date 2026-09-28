@@ -766,8 +766,13 @@ void CGamePersistent::OnFrame()
 #endif
 	if (!g_dedicated_server && !m_intro_event.empty()) m_intro_event();
 
-	if (!g_dedicated_server && Device.dwPrecacheFrame == 0 && !m_intro && m_intro_event.empty())
+	if (!g_dedicated_server && Device.dwPrecacheFrame == 0 && !m_intro && m_intro_event.empty() &&
+		load_screen_renderer.b_registered)
+	{
+		if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+			Msg("* [zone-client-load] precache complete; stopping load screen");
 		load_screen_renderer.stop();
+	}
 
 	if (!m_pMainMenu->IsActive())
 		m_pMainMenu->DestroyInternal(false);

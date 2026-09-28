@@ -147,16 +147,25 @@ void CActor::StartTalk(CInventoryOwner* talk_partner)
 
 void CActor::NewPdaContact(CInventoryOwner* pInvOwner)
 {
+#ifdef DEDICATED_SERVER
+	(void)pInvOwner;
+	return;
+#else
 	if (!IsGameTypeSingle()) return;
 
 	bool b_alive = !!(smart_cast<CEntityAlive*>(pInvOwner))->g_Alive();
 	CurrentGameUI()->UIMainIngameWnd->AnimateContacts(b_alive);
 
 	Level().MapManager().AddRelationLocation(pInvOwner);
+#endif // DEDICATED_SERVER
 }
 
 void CActor::LostPdaContact(CInventoryOwner* pInvOwner)
 {
+#ifdef DEDICATED_SERVER
+	(void)pInvOwner;
+	return;
+#else
 	CGameObject* GO = smart_cast<CGameObject*>(pInvOwner);
 	if (GO)
 	{
@@ -167,6 +176,7 @@ void CActor::LostPdaContact(CInventoryOwner* pInvOwner)
 		}
 		Level().MapManager().RemoveMapLocation("deadbody_location", GO->ID());
 	};
+#endif // DEDICATED_SERVER
 }
 
 void CActor::AddGameNews_deffered(GAME_NEWS_DATA& news_data, u32 delay)

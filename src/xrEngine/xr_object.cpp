@@ -22,6 +22,8 @@
 #include <intrin.h>
 #pragma warning(pop)
 
+extern ENGINE_API bool g_dedicated_server;
+
 #pragma intrinsic(_InterlockedCompareExchange)
 
 inline void CObjectList::o_crow(CObject* O)
@@ -342,7 +344,11 @@ void CObject::Load(LPCSTR section)
 		xr_delete(m_owned_collision_pose);
 		m_owned_collision_pose = nullptr;
 	}
-	if (!Render && !CollisionPose() && pSettings->line_exist(section, "cform") && *NameVisual)
+	// A dedicated build may keep a renderer interface stub alive while deliberately
+	// omitting model instances. Select the CPU OGF pose from the server role, not
+	// from the presence of the renderer interface.
+	if ((g_dedicated_server || !Render) && !CollisionPose() &&
+		pSettings->line_exist(section, "cform") && *NameVisual)
 	{
 		CObjectList* object_list = g_pGameLevel ? &g_pGameLevel->Objects : nullptr;
 		m_owned_collision_pose = CreateCpuCollisionPoseFromOGF(*NameVisual, object_list);
@@ -369,6 +375,19 @@ BOOL CObject::net_Spawn(CSE_Abstract* data)
 	{
 		if (pSettings->line_exist(cNameSect(), "cform"))
 		{
+			// Some entities receive their visual name only during net_Spawn, and
+			// the dedicated role may not have been set when their section loaded.
+			// Retry here, when both the runtime role and cform section are known.
+			if ((g_dedicated_server || !Render) && !CollisionPose() && *NameVisual)
+			{
+				CObjectList* object_list = g_pGameLevel ? &g_pGameLevel->Objects : nullptr;
+				m_owned_collision_pose = CreateCpuCollisionPoseFromOGF(*NameVisual, object_list);
+				if (m_owned_collision_pose)
+					SetCollisionPoseProvider(m_owned_collision_pose);
+				else
+					Msg("! [zone-server] no CPU collision pose for cform object '%s' (section='%s', visual='%s').",
+						*cName(), cNameSect(), *NameVisual);
+			}
 			R_ASSERT3(CollisionPose(), "Object has cform but no collision-pose provider", *cName());
 			collidable.model = xr_new<CCF_Skeleton>(this);
 		}

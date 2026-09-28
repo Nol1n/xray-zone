@@ -404,6 +404,8 @@ u32 xrServer::OnDelayedMessage(NET_Packet& P, ClientID sender) // Non-Zero means
 	{
 	case M_CLIENT_REQUEST_CONNECTION_DATA:
 		{
+			if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+				Msg("* [zone-server-handshake] received M_CLIENT_REQUEST_CONNECTION_DATA from client=%u", sender.value());
 			IClient* tmp_client = net_players.GetFoundClient(
 				ClientIdSearchPredicate(sender));
 			VERIFY(tmp_client);

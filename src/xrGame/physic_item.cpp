@@ -13,6 +13,8 @@
 #include "../Include/xrRender/RenderVisual.h"
 #include "../Include/xrRender/KinematicsAnimated.h"
 #include "../Include/xrRender/Kinematics.h"
+
+extern ENGINE_API bool g_dedicated_server;
 #define CHOOSE_MAX(x,inst_x,y,inst_y,z,inst_z)\
 	if(x>y)\
 	if(x>z){inst_x;}\
@@ -62,7 +64,7 @@ void CPhysicItem::OnH_B_Independent(bool just_before_destroy)
 	setVisible(TRUE);
 	setEnabled(TRUE);
 
-	if (!just_before_destroy)
+	if (!just_before_destroy && !g_dedicated_server)
 		activate_physic_shell();
 }
 
@@ -87,7 +89,11 @@ BOOL CPhysicItem::net_Spawn(CSE_Abstract* DC)
 		pK->CalculateBones(TRUE);
 	}
 	CSE_Abstract* abstract = (CSE_Abstract*)DC;
-	if (0xffff == abstract->ID_Parent)
+	// A renderer-free server has no IKinematics source for the legacy ODE
+	// shell builder. Keep the network object and CPU collision form registered;
+	// authoritative projectile/item physics gets its dedicated implementation
+	// separately from client-side visual shells.
+	if (!g_dedicated_server && 0xffff == abstract->ID_Parent)
 	{
 		if (!PPhysicsShell())setup_physic_shell();
 		//else processing_deactivate();//.

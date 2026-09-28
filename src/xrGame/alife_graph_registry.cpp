@@ -9,6 +9,10 @@
 #include "stdafx.h"
 #include "alife_graph_registry.h"
 #include "../xrEngine/x_ray.h"
+#include "level_graph.h"
+#ifdef DEDICATED_SERVER
+#include "../xrEngine/DedicatedServer.h"
+#endif // DEDICATED_SERVER
 
 using namespace ALife;
 
@@ -55,6 +59,42 @@ void CALifeGraphRegistry::update(CSE_ALifeDynamicObject* object)
 	{
 		m_actor = smart_cast<CSE_ALifeCreatureActor*>(object);
 		R_ASSERT2(m_actor, "Invalid flag M_SPAWN_OBJECT_ASPLAYER for non-actor object!");
+#ifdef DEDICATED_SERVER
+		if (DedicatedServerStartLevel() && m_level)
+		{
+			const CGameGraph::CVertex* source_vertex = ai().game_graph().vertex(m_actor->m_tGraphID);
+			const GameGraph::_LEVEL_ID target_level_id = level().level_id();
+			GameGraph::_GRAPH_ID target_graph_id = GameGraph::_GRAPH_ID(-1);
+			const CGameGraph::CVertex* target_vertex = 0;
+			float nearest_distance = flt_max;
+			for (GameGraph::_GRAPH_ID i = 0; i < ai().game_graph().header().vertex_count(); ++i)
+			{
+				const CGameGraph::CVertex* candidate = ai().game_graph().vertex(i);
+				if (candidate->level_id() != target_level_id)
+					continue;
+
+				const float distance = candidate->game_point().distance_to_sqr(source_vertex->game_point());
+				if (distance < nearest_distance)
+				{
+					nearest_distance = distance;
+					target_graph_id = i;
+					target_vertex = candidate;
+				}
+			}
+
+			R_ASSERT2(target_vertex, "Dedicated server level has no game graph vertices");
+			R_ASSERT2(ai().level_graph().valid_vertex_id(target_vertex->level_vertex_id()),
+			         "Dedicated actor spawn is invalid for the selected level graph");
+
+			m_actor->m_tGraphID = target_graph_id;
+			m_actor->m_tNodeID = target_vertex->level_vertex_id();
+			m_actor->o_Position = target_vertex->level_point();
+			Msg("* [zone-server] dedicated actor spawn: %s -> %s graph_vertex=%u level_vertex=%u",
+			    *ai().game_graph().header().level(source_vertex->level_id()).name(),
+			    *ai().game_graph().header().level(target_level_id).name(), static_cast<u32>(target_graph_id),
+			    m_actor->m_tNodeID);
+		}
+#endif // DEDICATED_SERVER
 	}
 
 	if (m_actor && !m_level)
@@ -67,10 +107,16 @@ void CALifeGraphRegistry::update(CSE_ALifeDynamicObject* object)
 
 void CALifeGraphRegistry::setup_current_level()
 {
-	m_level = xr_new<CALifeLevelRegistry>(ai().game_graph().vertex(actor()->m_tGraphID)->level_id());
+	setup_current_level(ai().game_graph().vertex(actor()->m_tGraphID)->level_id());
+}
+
+void CALifeGraphRegistry::setup_current_level(GameGraph::_LEVEL_ID level_id)
+{
+	R_ASSERT(!m_level);
+	m_level = xr_new<CALifeLevelRegistry>(level_id);
 	level().set_process_time(m_process_time);
 	for (int i = 0, n = ai().game_graph().header().vertex_count(); i < n; ++i)
-		if (ai().game_graph().vertex(i)->level_id() == level().level_id())
+		if (ai().game_graph().vertex(i)->level_id() == level_id)
 		{
 			D_OBJECT_P_MAP::const_iterator I = m_objects[i].objects().objects().begin();
 			D_OBJECT_P_MAP::const_iterator E = m_objects[i].objects().objects().end();
@@ -86,13 +132,30 @@ void CALifeGraphRegistry::setup_current_level()
 
 		m_temp.clear();
 	}
-	GameGraph::LEVEL_MAP::const_iterator I = ai().game_graph().header().levels().find(
-		ai().game_graph().vertex(actor()->m_tGraphID)->level_id());
+	GameGraph::LEVEL_MAP::const_iterator I = ai().game_graph().header().levels().find(level_id);
 	R_ASSERT2(ai().game_graph().header().levels().end() != I, "Graph point level ID not found!");
 
 	int id = pApp->Level_ID(*(*I).second.name(), "1.0", true);
 	VERIFY3(id >= 0, "Level is corrupted or doesn't exist", *(*I).second.name());
 	ai().load(*(*I).second.name());
+}
+
+bool CALifeGraphRegistry::set_initial_level(const char* level_name)
+{
+	if (!level_name || !*level_name || m_actor || m_level)
+		return false;
+
+	const GameGraph::LEVEL_MAP& levels = ai().game_graph().header().levels();
+	for (GameGraph::LEVEL_MAP::const_iterator I = levels.begin(); I != levels.end(); ++I)
+	{
+		if (!stricmp(*(*I).second.name(), level_name))
+		{
+			setup_current_level((*I).first);
+			return true;
+		}
+	}
+
+	return false;
 }
 
 void CALifeGraphRegistry::attach(CSE_Abstract& object, CSE_ALifeInventoryItem* item,

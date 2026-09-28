@@ -28,6 +28,8 @@
 #include "memory_manager.h"
 #include "ai/monsters/basemonster/base_monster.h"
 
+extern ENGINE_API bool g_dedicated_server;
+
 float g_ai_vision_speed_boost = 1.0f;
 
 #ifndef MASTER_GOLD
@@ -258,17 +260,25 @@ float CVisualMemoryManager::object_visible_distance(const CGameObject* game_obje
 
 	if (m_object)
 	{
-		eye_matrix =
-			smart_cast<IKinematics*>(
-				m_object->Visual()
-			)
-			->LL_GetTransform(
-				u16(m_object->eye_bone)
-			);
-
-		Fvector temp;
-		eye_matrix.transform_tiny(temp, eye_position);
-		m_object->XFORM().transform_tiny(eye_position, temp);
+		if (g_dedicated_server)
+		{
+			// CCustomMonster::eye_pp_s0 builds this world-space eye transform
+			// from CPU collision bounds and head orientation on the server.
+			eye_position.set(m_object->eye_matrix.c);
+		}
+		else
+		{
+			IKinematics* kinematics = smart_cast<IKinematics*>(m_object->Visual());
+			if (kinematics && m_object->eye_bone >= 0)
+			{
+				eye_matrix = kinematics->LL_GetTransform(u16(m_object->eye_bone));
+				Fvector temp;
+				eye_matrix.transform_tiny(temp, eye_position);
+				m_object->XFORM().transform_tiny(eye_position, temp);
+			}
+			else
+				eye_position.set(m_object->eye_matrix.c);
+		}
 
 		if (m_stalker)
 		{
@@ -320,6 +330,9 @@ float CVisualMemoryManager::object_visible_distance(const CGameObject* game_obje
 
 float CVisualMemoryManager::object_luminocity(const CGameObject* game_object) const
 {
+	if (g_dedicated_server)
+		return 1.f;
+
 	if (!smart_cast<CEntityAlive const*>(game_object)) //Alundaio
 		return (1.f);
 	float luminocity = const_cast<CGameObject*>(game_object)->ROS()->get_luminocity();
@@ -362,7 +375,10 @@ float CVisualMemoryManager::get_visible_value(const CGameObject* game_object, fl
 
 	//Alundaio: hijack not_yet_visible_object to lua
 	::luabind::functor<float> funct;
-	if (ai().script_engine().functor("visual_memory_manager.get_visible_value", funct))
+	// GAMMA's visual-memory Lua callback reads db.actor and presentation state. Dedicated
+	// servers have no local player actor; use the engine's distance/velocity visibility
+	// model below instead, with server-side CPU visibility inputs.
+	if (!g_dedicated_server && ai().script_engine().functor("visual_memory_manager.get_visible_value", funct))
 		return (funct(m_object ? m_object->lua_game_object() : 0, game_object ? game_object->lua_game_object() : 0,
 		              time_delta, current_state().m_time_quant, luminocity, current_state().m_velocity_factor,
 		              object_velocity, distance, object_distance, always_visible_distance)) * g_ai_vision_speed_boost * m_vision_speed;

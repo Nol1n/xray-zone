@@ -144,7 +144,16 @@ BOOL CScriptBinder::net_Spawn(CSE_Abstract* DC)
 	{
 		try
 		{
-			return ((BOOL)m_object->net_Spawn(object));
+			const BOOL spawnSucceeded = (BOOL)m_object->net_Spawn(object);
+			if (!spawnSucceeded && Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+			{
+				const LPCSTR binding = pSettings->line_exist(*object->s_name, "script_binding")
+					? pSettings->r_string(*object->s_name, "script_binding")
+					: "<none>";
+				Msg("* [zone-client-spawn] script binder rejected section=%s id=%u binding=%s",
+					*object->s_name, object->ID, binding);
+			}
+			return spawnSucceeded;
 		}
 		catch (...)
 		{

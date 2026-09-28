@@ -20,6 +20,9 @@
 #include "UI/UIGameTutorial.h"
 #include "ui/UIPdaWnd.h"
 #include "../xrNetServer/NET_AuthCheck.h"
+#ifdef DEDICATED_SERVER
+#include "../xrEngine/DedicatedServer.h"
+#endif // DEDICATED_SERVER
 
 #include "../xrphysics/physicscommon.h"
 extern ENGINE_API bool g_dedicated_server;
@@ -324,6 +327,9 @@ void CLevel::Send(NET_Packet& P, u32 dwFlags, u32 dwTimeout)
 void CLevel::net_Update()
 {
 	zone_profiler::Scope profileNetworkTick(zone_profiler::Zone::NetworkTick);
+#ifdef DEDICATED_SERVER
+	static bool dedicatedServerUpdateTraced = false;
+#endif // DEDICATED_SERVER
 	if (game_configured)
 	{
 		// If we have enought bandwidth - replicate client data on to server
@@ -335,7 +341,19 @@ void CLevel::net_Update()
 	if (Server && OnServer())
 	{
 		Device.Statistic->netServer.Begin();
+#ifdef DEDICATED_SERVER
+		const bool traceDedicatedServerUpdate = g_dedicated_server && !dedicatedServerUpdateTraced;
+		if (traceDedicatedServerUpdate)
+			TraceDedicatedServerBootstrap("first dedicated server update entered");
+#endif // DEDICATED_SERVER
 		Server->Update();
+#ifdef DEDICATED_SERVER
+		if (traceDedicatedServerUpdate)
+		{
+			TraceDedicatedServerBootstrap("first dedicated server update completed");
+			dedicatedServerUpdateTraced = true;
+		}
+#endif // DEDICATED_SERVER
 		Device.Statistic->netServer.End();
 	}
 }
@@ -380,15 +398,12 @@ bool CLevel::Connect2Server(const char* options)
 		u32 CurTime = GetTickCount();
 		if (CurTime > EndTime)
 		{
-			NET_Packet P;
-			P.B.count = 0;
-			P.r_pos = 0;
-
-			P.w_u8(0);
-			P.w_u8(0);
-			P.w_stringZ("Data verification failed. Cheater?");
-
-			OnConnectResult(&P);
+			Msg("! client : connection timed out waiting for server authentication result after %d ms",
+				ConnectionTimeOut);
+			m_bConnectResultReceived = true;
+			m_bConnectResult = false;
+			m_sConnectResult = "Timed out waiting for server authentication result";
+			MainMenu()->SetErrorDialog(CMainMenu::ErrServerReject);
 		}
 		if (net_isFails_Connect())
 		{

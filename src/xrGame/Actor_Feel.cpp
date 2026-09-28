@@ -146,10 +146,12 @@ CActor::pickup_result_t CActor::PickupModeUpdate()
 
 	feel_touch_update(Position(), m_fPickupInfoRadius);
 
+#ifndef DEDICATED_SERVER
 	if (!CurrentGameUI()->GetPdaMenu().IsShown())
 		DrawPickupItems();
 	else
 		m_bDelayDrawPickupItems = true;
+#endif // DEDICATED_SERVER
 
 	return {true, callback_handled};
 }
@@ -170,6 +172,11 @@ void CActor::DrawPickupItems()
 
 void CActor::PickupModeUpdate_COD(pickup_result_t pickup_result)
 {
+#ifdef DEDICATED_SERVER
+	// COD pickup targeting depends on the local camera and only updates the HUD.
+	(void)pickup_result;
+	return;
+#else
 	if (Level().CurrentViewEntity() != this) return;
 
 	if (!g_Alive() || eacFirstEye != cam_active || !psDeviceFlags2.test(rsCODPickup))
@@ -272,6 +279,7 @@ void CActor::PickupModeUpdate_COD(pickup_result_t pickup_result)
 
 		Game().SendPickUpEvent(ID(), pNearestItem->object().ID());
 	}
+#endif // DEDICATED_SERVER
 };
 
 void CActor::Check_for_AutoPickUp()

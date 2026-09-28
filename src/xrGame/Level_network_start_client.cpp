@@ -71,7 +71,16 @@ bool CLevel::net_start_client2()
 
 void rescan_mp_archives()
 {
-	FS_Path* mp_archs_path = FS.get_path("$game_arch_mp$");
+	static constexpr LPCSTR mp_archives_alias = "$game_arch_mp$";
+	if (!FS.path_exist(mp_archives_alias))
+	{
+		// Older/custom GAMMA fsgame files can omit this optional multiplayer
+		// archive alias. Keep network joins working with X-Ray's standard path.
+		Msg("* [zone-client] fs-ltx has no %s alias; using $fs_root$\\mp\\", mp_archives_alias);
+		FS.append_path(mp_archives_alias, "$fs_root$", "mp\\", FALSE);
+	}
+
+	FS_Path* mp_archs_path = FS.get_path(mp_archives_alias);
 	FS.rescan_path(mp_archs_path->m_Path,
 	               mp_archs_path->m_Flags.is(FS_Path::flRecurse)
 	);
@@ -267,6 +276,8 @@ bool CLevel::net_start_client6()
 
 		//		g_pGamePersistent->LoadTitle		("st_client_synchronising");
 		g_pGamePersistent->LoadTitle();
+		if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+			Msg("* [zone-client-load] starting 60-frame client precache");
 		Device.PreCache(60, true, true);
 		net_start_result_total = TRUE;
 	}

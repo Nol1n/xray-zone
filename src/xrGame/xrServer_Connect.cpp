@@ -75,19 +75,23 @@ xrServer::EConnect xrServer::Connect(shared_str& session_name, GameDescriptionDa
 	#ifdef DEDICATED_SERVER
 	TraceDedicatedServerBootstrap("xrServer::Connect game state instance created");
 	#endif // DEDICATED_SERVER
+	if (0 == game) return ErrConnect;
+
+	xr_auth_strings_t tmp_ignore;
+	xr_auth_strings_t tmp_check;
+	fill_auth_check_params(tmp_ignore, tmp_check);
+	FS.auth_generate(tmp_ignore, tmp_check);
+	#ifdef DEDICATED_SERVER
+	TraceDedicatedServerBootstrap("xrServer::Connect authentication checksum generated");
+	#endif // DEDICATED_SERVER
 
 	// Options
-	if (0 == game) return ErrConnect;
 	//	game->type				= type_id;
 	if (game->Type() != eGameIDSingle)
 	{
 		m_file_transfers = xr_new<file_transfer::server_site>();
 		initialize_screenshot_proxies();
 		LoadServerInfo();
-		xr_auth_strings_t tmp_ignore;
-		xr_auth_strings_t tmp_check;
-		fill_auth_check_params(tmp_ignore, tmp_check);
-		FS.auth_generate(tmp_ignore, tmp_check);
 	}
 #ifdef DEBUG
 	Msg("* Created server_game %s",game->type_name());
@@ -107,6 +111,9 @@ xrServer::EConnect xrServer::Connect(shared_str& session_name, GameDescriptionDa
 	game->Create(session_name);
 	#ifdef DEDICATED_SERVER
 	TraceDedicatedServerBootstrap("xrServer::Connect game instance created");
+		xr_strcpy(game_descr.map_name, game->level_name(session_name.c_str()).c_str());
+		xr_strcpy(game_descr.download_url, get_map_download_url(game_descr.map_name, game_descr.map_version));
+		Msg("* [zone-server] advertised level: %s", game_descr.map_name);
 	#endif // DEDICATED_SERVER
 
 	#ifdef DEDICATED_SERVER

@@ -258,6 +258,8 @@ void CLevel::ClientReceive()
 			break;
 		case M_SV_CONFIG_FINISHED:
 			{
+				if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+					Msg("* [zone-client-handshake] received M_SV_CONFIG_FINISHED");
 				game_configured = TRUE;
 #ifdef DEBUG
 				Msg("- Game configuring : Finished ");

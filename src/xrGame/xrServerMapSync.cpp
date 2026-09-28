@@ -17,13 +17,19 @@ void xrServer::OnProcessClientMapData(NET_Packet& P, ClientID const& clientID)
 	P.r_stringZ_s(client_map_version);
 	P.r_u32(client_geom_crc32);
 
-	LPCSTR server_map_name = Level().get_net_DescriptionData().map_name;
-	LPCSTR server_map_version = Level().get_net_DescriptionData().map_version;
+	const shared_str server_map_name = level_name(GetConnectOptions());
+	const shared_str server_map_version = level_version(GetConnectOptions());
+	const bool mapMatches = !xr_strcmp(server_map_name.c_str(), client_map_name) &&
+		!xr_strcmp(server_map_version.c_str(), client_map_version);
+	const bool geometryMatches = Level().IsChecksumsEqual(client_geom_crc32);
+	if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+		Msg("* [zone-map-sync] server=%s/%s client=%s/%s client_geom=%08x map_match=%d geom_match=%d",
+			server_map_name.c_str(), server_map_version.c_str(), client_map_name, client_map_version,
+			client_geom_crc32, mapMatches, geometryMatches);
 
 	responseP.w_begin(M_SV_MAP_NAME);
 
-	if ((xr_strcmp(server_map_name, client_map_name)) ||
-		(xr_strcmp(server_map_version, client_map_version)))
+	if (!mapMatches)
 	{
 		responseP.w_u8(static_cast<u8>(YouHaveOtherMap));
 #ifdef DEBUG
@@ -32,7 +38,7 @@ void xrServer::OnProcessClientMapData(NET_Packet& P, ClientID const& clientID)
 #endif // #ifdef DEBUG
 		//here we can make hard disconnect of this client...
 	}
-	else if (!Level().IsChecksumsEqual(client_geom_crc32))
+	else if (!geometryMatches)
 	{
 		responseP.w_u8(static_cast<u8>(InvalidChecksum));
 	}

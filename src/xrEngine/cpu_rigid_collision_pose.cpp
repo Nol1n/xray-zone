@@ -744,6 +744,55 @@ public:
 	}
 };
 
+// Static OGF models have bounds but no skeletal pose. Dedicated-server cform
+// still needs a CPU collision provider, so expose a conservative bounds box as
+// one synthetic bone. Client rendering and authored skeletal cforms are not
+// changed by this fallback.
+class CCpuBoundsCollisionPose : public IObjectCollisionPose
+{
+	Fbox m_bounds_box;
+	Fsphere m_bounds_sphere;
+	SBoneShape m_shape;
+	Fmatrix m_identity;
+
+public:
+	static CCpuBoundsCollisionPose* Create(const ogf_header& header)
+	{
+		const Fvector& min = header.bb.min;
+		const Fvector& max = header.bb.max;
+		if (!std::isfinite(min.x) || !std::isfinite(min.y) || !std::isfinite(min.z) ||
+			!std::isfinite(max.x) || !std::isfinite(max.y) || !std::isfinite(max.z) ||
+			max.x <= min.x || max.y <= min.y || max.z <= min.z)
+			return nullptr;
+
+		CCpuBoundsCollisionPose* pose = xr_new<CCpuBoundsCollisionPose>();
+		pose->m_bounds_box.set(min, max);
+		pose->m_bounds_box.getsphere(pose->m_bounds_sphere.P, pose->m_bounds_sphere.R);
+
+		Fvector center;
+		Fvector half_size;
+		pose->m_bounds_box.getcenter(center);
+		pose->m_bounds_box.getradius(half_size);
+		Fmatrix box_transform;
+		box_transform.identity();
+		box_transform.c.set(center);
+		pose->m_shape.type = SBoneShape::stBox;
+		pose->m_shape.box.xform_set(box_transform);
+		pose->m_shape.box.m_halfsize.set(half_size);
+		pose->m_identity.identity();
+		return pose;
+	}
+
+	const Fbox& bounds_box() const override { return m_bounds_box; }
+	const Fsphere& bounds_sphere() const override { return m_bounds_sphere; }
+	void calculate_pose() override {}
+	u64 visible_bones() override { return 1; }
+	u16 bone_count() const override { return 1; }
+	BOOL bone_visible(u16 bone_id) override { return bone_id == 0; }
+	const SBoneShape& bone_shape(u16 bone_id) override { return m_shape; }
+	const Fmatrix& bone_transform(u16 bone_id) override { return m_identity; }
+};
+
 bool ResolveOGFPath(LPCSTR model_name, string_path& path)
 {
 	if (!model_name || !model_name[0])
@@ -801,6 +850,18 @@ IObjectCollisionPose* CreateCpuCollisionPoseFromOGF(LPCSTR model_name, CObjectLi
 			pose = CCpuAnimatedCollisionPose::Create(*data, model_name, &object_list->CpuMotionsCache());
 		if (!pose)
 			Msg("! CPU animated collision pose could not load OGF/OMF assets for '%s'.", model_name);
+	}
+
+	// Rigid vehicles and static props may carry OGF skeleton tags but no usable
+	// IK/bone chunks. Preserve the authored CPU pose when it parses; otherwise
+	// dedicated mode can still collide against the validated model bounds. Never
+	// apply this approximation to animated actors, whose pose drives gameplay.
+	if (!pose && header.type != MT_SKELETON_ANIM)
+	{
+		pose = CCpuBoundsCollisionPose::Create(header);
+		if (pose)
+			Msg("! Using conservative OGF bounds-box collision fallback for '%s' (type=%u, rigid-pose=%s).",
+				model_name, u32(header.type), header.type == MT_SKELETON_RIGID ? "unavailable" : "not applicable");
 	}
 
 	FS.r_close(data);

@@ -67,6 +67,8 @@ void xrServer::Perform_connect_spawn(CSE_Abstract* E, xrClientData* CL, NET_Pack
 
 void xrServer::SendConfigFinished(ClientID const& clientId)
 {
+	if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+		Msg("* [zone-server-handshake] sending M_SV_CONFIG_FINISHED to client=%u", clientId.value());
 	NET_Packet P;
 	P.w_begin(M_SV_CONFIG_FINISHED);
 	SendTo(clientId, P, net_flags(TRUE,TRUE));
@@ -213,6 +215,12 @@ void xrServer::OnBuildVersionRespond(IClient* CL, NET_Packet& P)
 	P.r_begin(Type);
 	u64 _our = FS.auth_get();
 	u64 _him = P.r_u64();
+	if (strstr(Core.Params, "-zone_server_bootstrap_trace"))
+	{
+		Msg("* [zone-auth] server=%08x%08x client=%08x%08x",
+			static_cast<u32>(_our >> 32), static_cast<u32>(_our),
+			static_cast<u32>(_him >> 32), static_cast<u32>(_him));
+	}
 
 #ifdef USE_DEBUG_AUTH
 	Msg("_our = %d", _our);

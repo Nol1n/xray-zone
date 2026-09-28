@@ -523,6 +523,12 @@ public:
 
 	virtual void Execute(LPCSTR args)
 	{
+		// Dedicated servers have no local input device. GAMMA and other mod
+		// scripts may still execute client keybinds while loading their settings.
+#ifdef DEDICATED_SERVER
+		return;
+#endif
+
 		string256 action;
 		string256 key;
 		*action = 0;

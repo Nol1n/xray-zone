@@ -772,6 +772,7 @@ void CActor::HitMark(float P,
                      ALife::EHitType hit_type_)
 {
 	// hit marker
+	#ifndef DEDICATED_SERVER
 	if ( /*(hit_type==ALife::eHitTypeFireWound||hit_type==ALife::eHitTypeWound_2) && */
 		g_Alive() && Local() && (Level().CurrentEntity() == this))
 	{
@@ -829,6 +830,7 @@ void CActor::HitMark(float P,
 		xr_sprintf(sect_name, "effector_fire_hit_%d", id);
 		AddEffector(this, effFireHit, sect_name, P * 0.001f);
 	} //if hit_type
+	#endif // DEDICATED_SERVER
 }
 
 void CActor::HitSignal(float perc, Fvector& vLocalDir, CObject* who, s16 element)
@@ -956,6 +958,7 @@ void CActor::Die(CObject* who)
 		m_DangerSnd.stop();
 	}
 
+	#ifndef DEDICATED_SERVER
 	if (IsGameTypeSingle())
 	{
 		// demonized: First Person Death
@@ -1003,6 +1006,7 @@ void CActor::Die(CObject* who)
 	{
 		cam_Set(eacFixedLookAt);
 	}
+	#endif // DEDICATED_SERVER
 
 	mstate_wishful &= ~mcAnyMove;
 	mstate_real &= ~mcAnyMove;
@@ -1058,8 +1062,10 @@ void CActor::g_Physics(Fvector& _accel, float jump, float dt)
 	{
         CPHMovementControl* const mctrl = character_physics_support()->movement();
 
+		#ifndef DEDICATED_SERVER
 		if (mctrl->gcontact_Was)
 			Cameras().AddCamEffector(xr_new<CEffectorFall>(mctrl->gcontact_Power));
+		#endif // DEDICATED_SERVER
 
 		if (!fis_zero(mctrl->gcontact_HealthLost))
 		{
@@ -1127,6 +1133,10 @@ float CActor::currentFOV()
 
 void CActor::UpdateCL()
 {
+#ifdef DEDICATED_SERVER
+	// A dedicated server has no local input receiver or presentation view.
+	m_bPickupMode = false;
+#else
 	if (g_Alive() && Level().CurrentViewEntity() == this)
 	{
 		if (CurrentGameUI() && (!CurrentGameUI()->TopInputReceiver() || (CurrentGameUI()->TopInputReceiver() && !CurrentGameUI()->TopInputReceiver()->StopAnyMove())) && !m_holder)
@@ -1146,6 +1156,7 @@ void CActor::UpdateCL()
 			m_bPickupMode = false;
 		}
 	}
+#endif // DEDICATED_SERVER
 
 	UpdateInventoryOwner(Device.dwTimeDelta);
 
@@ -1177,7 +1188,13 @@ void CActor::UpdateCL()
 
 	SetZoomAimingMode(false);
 	CWeapon* pWeapon = smart_cast<CWeapon*>(inventory().ActiveItem());
+	if (pWeapon && pWeapon->IsZoomed())
+		SetZoomAimingMode(true);
 
+	if (pWeapon && Level().CurrentEntity() && this->ID() == Level().CurrentEntity()->ID())
+		m_fdisp_controller.SetDispertion(pWeapon->GetFireDispersion(true, true));
+
+#ifndef DEDICATED_SERVER
 	cam_Update(float(Device.dwTimeDelta) / 1000.0f, currentFOV());
     m_legs_controller.update(this);
 
@@ -1199,15 +1216,11 @@ void CActor::UpdateCL()
 			CEffectorZoomInertion* S = smart_cast<CEffectorZoomInertion*>(Cameras().GetCamEffector(eCEZoom));
 			if (S)
 				S->SetParams(full_fire_disp);
-
-			SetZoomAimingMode(true);
 		}
 
 		if (Level().CurrentEntity() && this->ID() == Level().CurrentEntity()->ID())
 		{
 			float fire_disp_full = pWeapon->GetFireDispersion(true, true);
-			m_fdisp_controller.SetDispertion(fire_disp_full);
-
 			fire_disp_full = m_fdisp_controller.GetCurrentDispertion();
 
 			if (!Device.m_SecondViewport.IsSVPFrame())
@@ -1266,14 +1279,18 @@ void CActor::UpdateCL()
 			Device.m_SecondViewport.SetSVPActive(false);
 		}
 	}
+#endif // DEDICATED_SERVER
 
 	UpdateDefferedMessages();
 
+#ifndef DEDICATED_SERVER
 	if (g_Alive())
 		CStepManager::update(this == Level().CurrentViewEntity());
+#endif // DEDICATED_SERVER
 
 	spatial.type |= STYPE_REACTTOSOUND;
 
+#ifndef DEDICATED_SERVER
 	if (m_sndShockEffector)
 	{
 		if (this == Level().CurrentViewEntity())
@@ -1291,10 +1308,14 @@ void CActor::UpdateCL()
 
 	if (IsFocused())
 		g_player_hud->update(trans);
+#else
+	xr_delete(m_sndShockEffector);
+#endif // DEDICATED_SERVER
 
 	if (psActorFlags.test(AF_MULTI_ITEM_PICKUP))
 		m_bPickupMode = false;
 
+#ifndef DEDICATED_SERVER
 	//Discord
 	if (psDeviceFlags2.test(rsDiscord))
 	{
@@ -1393,7 +1414,9 @@ void CActor::UpdateCL()
 			discord_gameinfo.ex_update = false;
 		}
 	}
+#endif // DEDICATED_SERVER
 
+#ifndef DEDICATED_SERVER
 	//for LV shaders
 	g_pGamePersistent->actor_data.health = GetfHealth();
 	g_pGamePersistent->actor_data.stamina = conditions().GetPower();
@@ -1403,6 +1426,7 @@ void CActor::UpdateCL()
 	// Update environment radiation value if hud is not shown
 	if (!psHUD_Flags.test(HUD_DRAW))
 		CurrentGameUI()->UIMainIngameWnd->get_hud_states()->UpdateZones();
+#endif // DEDICATED_SERVER
 }
 
 void CActor::set_safemode(bool status)
@@ -1410,8 +1434,10 @@ void CActor::set_safemode(bool status)
 	if (is_safemode() != status)
 	{
 		m_bSafemode = status;
+		#ifndef DEDICATED_SERVER
 		g_player_hud->OnMovementChanged(mcAnyMove);
 		g_player_hud->updateMovementLayerState();
+		#endif // DEDICATED_SERVER
 
 		CWeapon* wep = smart_cast<CWeapon*>(inventory().ActiveItem());
 		status ? callback(GameObject::eOnWeaponLowered)(wep ? wep->lua_game_object(): nullptr) : callback(GameObject::eOnWeaponRaised)(wep ? wep->lua_game_object() : nullptr);
@@ -1775,6 +1801,7 @@ void CActor::shedule_Update(u32 DT)
 	setSVU(OnServer());
 	//.	UpdateInventoryOwner			(DT);
 
+	#ifndef DEDICATED_SERVER
 	if (IsFocused())
 	{
 		BOOL bHudView = HUDview();
@@ -1803,6 +1830,8 @@ void CActor::shedule_Update(u32 DT)
 			}
 		}
 	}
+
+	#endif // DEDICATED_SERVER
 
 	if (m_holder || !getEnabled() || !Ready())
 	{
@@ -1929,12 +1958,14 @@ void CActor::shedule_Update(u32 DT)
 	inherited::shedule_Update(DT);
 
 	//ýôôåêòîð âêëþ÷àåìûé ïðè õîäüáå
+	#ifndef DEDICATED_SERVER
 	if (!pCamBobbing)
 	{
 		pCamBobbing = xr_new<CEffectorBobbing>();
 		Cameras().AddCamEffector(pCamBobbing);
 	}
 	pCamBobbing->SetState(mstate_real, conditions().IsLimping(), IsZoomAimingMode());
+	#endif // DEDICATED_SERVER
 
 	//çâóê òÿæåëîãî äûõàíèÿ ïðè óòàëîñòè è õðîìàíèè
 	if (this == Level().CurrentControlEntity() && !g_dedicated_server)
@@ -2009,6 +2040,7 @@ void CActor::shedule_Update(u32 DT)
 		setVisible(TRUE);
 
 	//÷òî àêòåð âèäèò ïåðåä ñîáîé
+	#ifndef DEDICATED_SERVER
 	collide::rq_result& RQ = HUD().GetRQ();
 
 
@@ -2086,6 +2118,15 @@ void CActor::shedule_Update(u32 DT)
 	//	UpdateSleep									();
 
 	//äëÿ ñâîéñò àðòåôàêòîâ, íàõîäÿùèõñÿ íà ïîÿñå
+	#else
+	m_pPersonWeLookingAt = NULL;
+	m_sDefaultObjAction = NULL;
+	m_pUsableObject = NULL;
+	m_pObjectWeLookingAt = NULL;
+	m_pVehicleWeLookingAt = NULL;
+	m_pInvBoxWeLookingAt = NULL;
+	#endif // DEDICATED_SERVER
+
 	UpdateArtefactsOnBeltAndOutfit();
 	m_pPhysics_support->in_shedule_Update(DT);
 	Check_for_AutoPickUp();

@@ -298,6 +298,9 @@ void updateCurrentScope() {
 }
 
 void CWeapon::UpdateZoomParams() {
+	if (g_dedicated_server)
+		return;
+
 	//////////
 	m_zoom_params.m_fMinBaseZoomFactor = READ_IF_EXISTS(pSettings, r_float, cNameSect(), "min_scope_zoom_factor", 200.0f);
 
@@ -370,6 +373,9 @@ void CWeapon::UpdateZoomParams() {
 
 void CWeapon::UpdateUIScope()
 {
+	if (g_dedicated_server)
+		return;
+
 	// Change or remove scope texture
 	shared_str scope_tex_name;
 	if (m_zoomtype == 0)
@@ -420,6 +426,9 @@ void CWeapon::UpdateUIScope()
 
 void CWeapon::SetUIScope(LPCSTR scope_texture)
 {
+	if (g_dedicated_server)
+		return;
+
 	xr_delete(m_UIScope);
 	scope_2dtexactive = 0; //crookr
 
@@ -796,19 +805,16 @@ void CWeapon::Load(LPCSTR section)
 	{
 		shared_str scope_tex_name = READ_IF_EXISTS(pSettings, r_string, cNameSect(), "scope_texture", NULL);
 
-		if (!!scope_tex_name && !scope_tex_name.equal("none") && !g_player_hud->m_adjust_mode)
+		if (!g_dedicated_server && !!scope_tex_name && !scope_tex_name.equal("none") && !g_player_hud->m_adjust_mode)
 		{
-			if (!g_dedicated_server)
+			m_UIScope = xr_new<CUIWindow>();
+			if (!pWpnScopeXml)
 			{
-				m_UIScope = xr_new<CUIWindow>();
-				if (!pWpnScopeXml)
-				{
-					pWpnScopeXml = xr_new<CUIXml>();
-					pWpnScopeXml->Load(CONFIG_PATH, UI_PATH, "scopes.xml");
-				}
-				m_scope_tex_name = scope_tex_name;
-				CUIXmlInit::InitWindow(*pWpnScopeXml, scope_tex_name.c_str(), 0, m_UIScope);
+				pWpnScopeXml = xr_new<CUIXml>();
+				pWpnScopeXml->Load(CONFIG_PATH, UI_PATH, "scopes.xml");
 			}
+			m_scope_tex_name = scope_tex_name;
+			CUIXmlInit::InitWindow(*pWpnScopeXml, scope_tex_name.c_str(), 0, m_UIScope);
 		}
 	}
 
@@ -1009,8 +1015,11 @@ BOOL CWeapon::net_Spawn(CSE_Abstract* DC)
 		if (wm)
 		{
 			wm->LoadScopeKoeffs();
-			m_scopeItem = xr_new<CAnonHudItem>();
-			m_scopeItem->Load(m_scopes[m_cur_scope].c_str());
+			if (!g_dedicated_server)
+			{
+				m_scopeItem = xr_new<CAnonHudItem>();
+				m_scopeItem->Load(m_scopes[m_cur_scope].c_str());
+			}
 		}
 	}
 
@@ -1949,6 +1958,9 @@ void CWeapon::UpdateHUDAddonsVisibility()
 
 void CWeapon::UpdateAddonsVisibility()
 {
+	if (g_dedicated_server)
+		return;
+
 	static shared_str wpn_scope = WPN_SCOPE;
 	static shared_str wpn_silencer = WPN_SILENCER;
 	static shared_str wpn_grenade_launcher = WPN_GRENADE_LAUNCHER;

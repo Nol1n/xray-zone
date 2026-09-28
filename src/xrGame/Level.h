@@ -204,6 +204,7 @@ protected:
 	bool xr_stdcall net_start_client6();
 	void net_OnChangeSelfName(NET_Packet* P);
 	void CalculateLevelCrc32();
+	void CalculateLevelCrc32ForLevel(LPCSTR level_name);
 public:
 	bool IsChecksumsEqual(u32 check_sum) const;
 	// sounds

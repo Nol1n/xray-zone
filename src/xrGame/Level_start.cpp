@@ -19,6 +19,9 @@
 
 int g_cl_save_demo = 0;
 extern XRCORE_API bool g_allow_heap_min;
+#ifdef DEDICATED_SERVER
+extern pureFrame* g_pNetProcessor;
+#endif // DEDICATED_SERVER
 
 shared_str CLevel::OpenDemoFile(const char* demo_file_name)
 {
@@ -191,6 +194,16 @@ bool CLevel::net_start2()
 		TraceDedicatedServerBootstrap("net_start2 default server level state applied");
 		#endif // DEDICATED_SERVER
 		map_data.m_name = Server->level_name(m_caServerOptions);
+		map_data.m_map_version = Server->level_version(m_caServerOptions);
+		#ifdef DEDICATED_SERVER
+		Msg("* [zone-server] active simulation level: %s", map_data.m_name.c_str());
+		if (g_dedicated_server)
+		{
+			CalculateLevelCrc32ForLevel(map_data.m_name.c_str());
+			Msg("* [zone-server] map sync identity: %s/%s geom=%08x",
+				map_data.m_name.c_str(), map_data.m_map_version.c_str(), map_data.m_level_geom_crc32);
+		}
+		#endif // DEDICATED_SERVER
 		if (!g_dedicated_server)
 			g_pGamePersistent->LoadTitle(true, map_data.m_name);
 	}
@@ -248,6 +261,18 @@ bool CLevel::net_start3()
 bool CLevel::net_start4()
 {
 	if (!net_start_result_total) return true;
+	if (g_dedicated_server)
+	{
+		// A dedicated process has no local client to register the shared network
+		// frame processor, so register it here for server event/tick processing.
+		#ifdef DEDICATED_SERVER
+		Device.seqFrameMT.Remove(g_pNetProcessor);
+		Device.seqFrame.Remove(g_pNetProcessor);
+		Device.seqFrame.Add(g_pNetProcessor, REG_PRIORITY_LOW - 2);
+		TraceDedicatedServerBootstrap("net_start4 registered dedicated network frame processor");
+		#endif // DEDICATED_SERVER
+		return true;
+	}
 
 	g_loading_events.pop_front();
 
@@ -263,7 +288,7 @@ bool CLevel::net_start4()
 
 bool CLevel::net_start5()
 {
-	if (net_start_result_total)
+	if (net_start_result_total && !g_dedicated_server)
 	{
 		NET_Packet NP;
 		NP.w_begin(M_CLIENTREADY);

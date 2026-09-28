@@ -9,6 +9,7 @@ volatile LONG g_shutdownRequested = 0;
 bool g_controlHandlerRegistered = false;
 HANDLE g_shutdownEvent = NULL;
 char g_shutdownEventName[128] = {};
+char g_startLevel[64] = {};
 
 bool isCommandLineBoundary(char value)
 {
@@ -29,6 +30,37 @@ bool hasCommandLineFlag(const char* commandLine, const char* flag)
 	}
 
 	return false;
+}
+
+bool parseStartLevel(const char* commandLine)
+{
+	static const char flag[] = "-zone_server_level=";
+	g_startLevel[0] = '\0';
+	if (!commandLine)
+		return true;
+
+	const size_t flagLength = sizeof(flag) - 1;
+	for (const char* match = strstr(commandLine, flag); match; match = strstr(match + flagLength, flag))
+	{
+		const bool beginsAtBoundary = match == commandLine || isCommandLineBoundary(match[-1]) || match[-1] == '"';
+		if (!beginsAtBoundary)
+			continue;
+
+		const char* value = match + flagLength;
+		const char* end = value;
+		while (*end && !isCommandLineBoundary(*end) && *end != '"')
+			++end;
+
+		const size_t valueLength = static_cast<size_t>(end - value);
+		if (valueLength == 0 || valueLength >= sizeof(g_startLevel))
+			return false;
+
+		memcpy(g_startLevel, value, valueLength);
+		g_startLevel[valueLength] = '\0';
+		return true;
+	}
+
+	return true;
 }
 
 void writeConsoleMessage(const char* message)
@@ -72,6 +104,11 @@ bool InitializeDedicatedServer(const char* commandLine)
 	if (!hasCommandLineFlag(commandLine, "-zone_server"))
 	{
 		writeConsoleMessage("Usage: AnomalyDedicated.exe -zone_server [server startup arguments]\r\n");
+		return false;
+	}
+	if (!parseStartLevel(commandLine))
+	{
+		writeConsoleMessage("Invalid -zone_server_level value. Use a level name shorter than 64 characters.\r\n");
 		return false;
 	}
 
@@ -124,6 +161,11 @@ bool DedicatedServerShutdownRequested()
 	if (InterlockedCompareExchange(&g_shutdownRequested, 0, 0) != 0)
 		return true;
 	return g_shutdownEvent && WaitForSingleObject(g_shutdownEvent, 0) == WAIT_OBJECT_0;
+}
+
+const char* DedicatedServerStartLevel()
+{
+	return g_startLevel[0] ? g_startLevel : NULL;
 }
 
 void RequestDedicatedServerShutdown()

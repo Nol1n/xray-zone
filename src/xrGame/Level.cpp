@@ -283,13 +283,14 @@ CLevel::CLevel() :
     }
     m_dwDeltaUpdate = u32(fixed_step * 1000);
     m_seniority_hierarchy_holder = xr_new<CSeniorityHierarchyHolder>();
+	// Space restrictions drive AI navigation/gameplay and are required by dedicated servers too.
+	m_space_restriction_manager = xr_new<CSpaceRestrictionManager>();
 	#ifdef DEDICATED_SERVER
 	TraceDedicatedServerBootstrap("CLevel simulation managers created");
 	#endif // DEDICATED_SERVER
     if (!g_dedicated_server)
     {
         m_level_sound_manager = xr_new<CLevelSoundManager>();
-        m_space_restriction_manager = xr_new<CSpaceRestrictionManager>();
         m_client_spawn_manager = xr_new<CClientSpawnManager>();
         m_autosave_manager = xr_new<CAutosaveManager>();
         m_debug_renderer = xr_new<CDebugRenderer>();

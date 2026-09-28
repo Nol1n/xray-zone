@@ -7,6 +7,8 @@
 //#include "../Include/xrRender/KinematicsAnimated.h"
 #include "../Include//xrRender/RenderVisual.h"
 
+extern ENGINE_API bool g_dedicated_server;
+
 CVisualZone::CVisualZone()
 {
 }
@@ -22,7 +24,16 @@ BOOL CVisualZone::net_Spawn(CSE_Abstract* DC)
 
 	CSE_Abstract* e = (CSE_Abstract*)(DC);
 	CSE_ALifeZoneVisual* Z = smart_cast<CSE_ALifeZoneVisual*>(e);
+	if (g_dedicated_server)
+	{
+		// Anomaly visuals are presentation-only. CCustomZone has already
+		// registered the CPU gameplay volume in the base spawn path.
+		return TRUE;
+	}
+
 	IKinematicsAnimated* SA = smart_cast<IKinematicsAnimated*>(Visual());
+	if (!SA)
+		return FALSE;
 	m_attack_animation = SA->ID_Cycle_Safe(Z->attack_animation);
 	VERIFY2(
 		m_attack_animation.valid(),
@@ -56,7 +67,7 @@ BOOL CVisualZone::net_Spawn(CSE_Abstract* DC)
 
 void CVisualZone::SwitchZoneState(EZoneState new_state)
 {
-	if (m_eZoneState == eZoneStateBlowout && new_state != eZoneStateBlowout)
+	if (!g_dedicated_server && m_eZoneState == eZoneStateBlowout && new_state != eZoneStateBlowout)
 	{
 		//	IKinematicsAnimated*	SA=smart_cast<IKinematicsAnimated*>(Visual());
 		smart_cast<IKinematicsAnimated*>(Visual())->PlayCycle(m_idle_animation);
@@ -77,6 +88,9 @@ void CVisualZone::Load(LPCSTR section)
 void CVisualZone::UpdateBlowout()
 {
 	inherited::UpdateBlowout();
+	if (g_dedicated_server)
+		return;
+
 	if (m_dwAttackAnimaionStart >= (u32)m_iPreviousStateTime &&
 		m_dwAttackAnimaionStart < (u32)m_iStateTime)
 		smart_cast<IKinematicsAnimated*>(Visual())->PlayCycle(m_attack_animation);

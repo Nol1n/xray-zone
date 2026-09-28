@@ -52,6 +52,8 @@
 
 class CScriptBinderObject;
 
+extern ENGINE_API bool g_dedicated_server;
+
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
@@ -1406,6 +1408,15 @@ CGameObject& CScriptGameObject::object() const
 ::luabind::object CScriptGameObject::GetShaders(bool bHud)
 {
 	IKinematics* k = nullptr;
+	::luabind::object table = ::luabind::newtable(ai().script_engine().lua());
+
+	// Script callbacks can still inspect inventory slots on a dedicated server, but
+	// shader/material enumeration is presentation-only and no render visual exists.
+	if (g_dedicated_server)
+	{
+		table["error"] = true;
+		return table;
+	}
 
 	if (bHud)
 	{
@@ -1418,9 +1429,11 @@ CGameObject& CScriptGameObject::object() const
 	}
 
 	if (!k)
-		k = object().Visual()->dcast_PKinematics();
-
-	::luabind::object table = ::luabind::newtable(ai().script_engine().lua());
+	{
+		IRenderVisual* visual = object().Visual();
+		if (visual)
+			k = visual->dcast_PKinematics();
+	}
 
 	if (!k)
 	{
@@ -1463,6 +1476,13 @@ CGameObject& CScriptGameObject::object() const
 ::luabind::object CScriptGameObject::GetDefaultShaders(bool bHud)
 {
 	IKinematics* k = nullptr;
+	::luabind::object table = ::luabind::newtable(ai().script_engine().lua());
+
+	if (g_dedicated_server)
+	{
+		table["error"] = true;
+		return table;
+	}
 
 	if (bHud)
 	{
@@ -1475,9 +1495,11 @@ CGameObject& CScriptGameObject::object() const
 	}
 
 	if (!k)
-		k = object().Visual()->dcast_PKinematics();
-
-	::luabind::object table = ::luabind::newtable(ai().script_engine().lua());
+	{
+		IRenderVisual* visual = object().Visual();
+		if (visual)
+			k = visual->dcast_PKinematics();
+	}
 
 	if (!k)
 	{

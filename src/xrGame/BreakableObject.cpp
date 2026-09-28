@@ -9,6 +9,8 @@
 #include "../xrEngine/xr_collide_form.h"
 #include "../Include/xrRender/Kinematics.h"
 
+extern ENGINE_API bool g_dedicated_server;
+
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
@@ -43,6 +45,16 @@ BOOL CBreakableObject::net_Spawn(CSE_Abstract* DC)
 	CSE_ALifeObjectBreakable* obj = smart_cast<CSE_ALifeObjectBreakable*>(e);
 	R_ASSERT(obj);
 	BOOL res = inherited::net_Spawn(DC);
+	if (g_dedicated_server)
+	{
+		// Keep the CPU collision form created by CObject::net_Spawn. Dedicated
+		// simulation has no render kinematics from which to build breakable debris.
+		fHealth = obj->m_health;
+		processing_deactivate();
+		bRemoved = false;
+		return res;
+	}
+
 	xr_delete(collidable.model);
 	collidable.model = xr_new<CCF_Skeleton>(this);
 	// set bone id
@@ -199,6 +211,12 @@ void CBreakableObject::net_Destroy()
 
 	m_pPhysicsShell = NULL;
 	inherited::net_Destroy();
+	if (g_dedicated_server)
+	{
+		Init();
+		return;
+	}
+
 	xr_delete(collidable.model);
 	Init();
 	//Visual()->vis.box.set(m_saved_box);
@@ -221,6 +239,14 @@ void CBreakableObject::Split()
 void CBreakableObject::Break()
 {
 	if (m_pPhysicsShell)return;
+	if (g_dedicated_server)
+	{
+		// The server owns the destroy event; client builds produce the visual
+		// debris and physics shell when they receive it.
+		SendDestroy();
+		return;
+	}
+
 	DestroyUnbroken();
 	CreateBroken();
 	ActivateBroken();

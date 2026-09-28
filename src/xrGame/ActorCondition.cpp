@@ -206,9 +206,11 @@ void CActorCondition::UpdateCondition()
 		clamp(m_fAlcohol, 0.0f, 1.0f);
 		if (IsGameTypeSingle())
 		{
+		#ifndef DEDICATED_SERVER
 			CEffectorCam* ce = Actor()->Cameras().GetCamEffector((ECamEffectorType)effAlcohol);
 			if (ce)
 				RemoveEffector(m_object,effAlcohol);
+			#endif // DEDICATED_SERVER
 		}
 	}
 	else if (GodMode())
@@ -251,6 +253,7 @@ void CActorCondition::UpdateCondition()
 	m_fAlcohol += v_alcohol * m_fDeltaTime;
 	clamp(m_fAlcohol, 0.0f, 1.0f);
 
+	#ifndef DEDICATED_SERVER
 	if (IsGameTypeSingle())
 	{
 		CEffectorCam* ce = Actor()->Cameras().GetCamEffector((ECamEffectorType)effAlcohol);
@@ -296,12 +299,14 @@ void CActorCondition::UpdateCondition()
 		//-		if(fis_zero(GetPsyHealth()))
 		//-			SetHealth( 0.0f );
 	};
+	#endif // DEDICATED_SERVER
 
 	UpdateSatiety();
 	UpdateBoosters();
 
 	inherited::UpdateCondition();
 
+	#ifndef DEDICATED_SERVER
 	if (IsGameTypeSingle())
 		UpdateTutorialThresholds();
 
@@ -317,6 +322,7 @@ void CActorCondition::UpdateCondition()
 		if (!m_death_effector->IsActual())
 			m_death_effector->Stop();
 	}
+	#endif // DEDICATED_SERVER
 
 	AffectDamage_InjuriousMaterialAndMonstersInfluence();
 }
@@ -337,8 +343,10 @@ void CActorCondition::UpdateBoosters()
 		}
 	}
 
+	#ifndef DEDICATED_SERVER
 	if (m_object == Level().CurrentViewEntity())
 		CurrentGameUI()->UIMainIngameWnd->UpdateBoosterIndicators(m_booster_influences);
+	#endif // DEDICATED_SERVER
 }
 
 float CActorCondition::GetBoosterValue(LPCSTR name, bool type)

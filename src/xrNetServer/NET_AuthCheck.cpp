@@ -4,6 +4,13 @@
 void XRNETSERVER_API fill_auth_check_params(xr_auth_strings_t& ignore,
                                             xr_auth_strings_t& check)
 {
+	// GAMMA scripts may register and rescan loose script files during startup.
+	// Refresh this tree on both client and server immediately before building the
+	// auth manifest so each side hashes the same visible file set.
+	FS_Path* scripts_path = FS.get_path("$game_scripts$");
+	R_ASSERT(scripts_path);
+	FS.rescan_path(scripts_path->m_Path, scripts_path->m_Flags.is(FS_Path::flRecurse));
+
 	string_path config;
 	LPCSTR pth = FS.get_path("$app_data_root$")->m_Path;
 	ignore.push_back(shared_str(pth));

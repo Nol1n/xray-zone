@@ -32,6 +32,9 @@
 #include "CharacterPhysicsSupport.h"
 #include "car_memory.h"
 #include "../xrphysics/IPHWorld.h"
+
+extern ENGINE_API bool g_dedicated_server;
+
 BONE_P_MAP CCar::bone_map = BONE_P_MAP();
 
 //extern CPHWorld*	ph_world;
@@ -211,6 +214,21 @@ BOOL CCar::net_Spawn(CSE_Abstract* DC)
 
 	CSE_Abstract *e = (CSE_Abstract*)(DC);
 	CSE_ALifeCar *car = smart_cast<CSE_ALifeCar*>(e);
+	if (g_dedicated_server)
+	{
+		if (!car)
+			return FALSE;
+
+		// Phase 1 keeps Cordon vehicles as static server-side collision objects.
+		// Their renderer, vehicle shell, cameras, and audio are client-only.
+		SetfHealth(car->health);
+		b_exploded = !g_Alive();
+		setEnabled(TRUE);
+		setVisible(TRUE);
+		const BOOL spawned = CScriptEntity::net_Spawn(DC);
+		processing_deactivate();
+		return spawned;
+	}
 
 	CPHSkeleton::Spawn(e);
 	
@@ -348,6 +366,21 @@ void CCar::SpawnInitPhysics(CSE_Abstract* D)
 
 void CCar::net_Destroy()
 {
+	if (g_dedicated_server)
+	{
+		CScriptEntity::net_Destroy();
+		inherited::net_Destroy();
+		CExplosive::net_Destroy();
+		CPHUpdateObject::Deactivate();
+		if (m_pPhysicsShell)
+		{
+			m_pPhysicsShell->Deactivate();
+			m_pPhysicsShell->ZeroCallbacks();
+			xr_delete(m_pPhysicsShell);
+		}
+		return;
+	}
+
 #ifdef DEBUG
 	DBgClearPlots();
 #endif

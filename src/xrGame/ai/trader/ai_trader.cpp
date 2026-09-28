@@ -24,6 +24,8 @@
 #include "trader_animation.h"
 #include "../../../xrServerEntities/clsid_game.h"
 
+extern ENGINE_API bool g_dedicated_server;
+
 CAI_Trader::CAI_Trader()
 {
 	AnimMan = xr_new<CTraderAnimation>(this);
@@ -133,10 +135,18 @@ BOOL CAI_Trader::net_Spawn(CSE_Abstract* DC)
 
 	set_money(l_tpTrader->m_dwMoney, false);
 
-	// Установка callback на кости
-	CBoneInstance* bone_head = &smart_cast<IKinematics*>(Visual())->LL_GetBoneInstance(
-		smart_cast<IKinematics*>(Visual())->LL_BoneID("bip01_head"));
-	bone_head->set_callback(bctCustom, BoneCallback, this);
+	// Head tracking is presentation-only; the dedicated server has no visual
+	// skeleton to host this callback.
+	if (!g_dedicated_server)
+	{
+		IKinematics* kinematics = smart_cast<IKinematics*>(Visual());
+		if (kinematics)
+		{
+			const u16 head_bone_id = kinematics->LL_BoneID("bip01_head");
+			if (head_bone_id != BI_NONE)
+				kinematics->LL_GetBoneInstance(head_bone_id).set_callback(bctCustom, BoneCallback, this);
+		}
+	}
 
 	shedule.t_min = 100;
 	shedule.t_max = 2500; // This equaltiy is broken by Dima :-( // 30 * NET_Latency / 4;
@@ -252,7 +262,18 @@ void CAI_Trader::shedule_Update(u32 dt)
 
 void CAI_Trader::g_WeaponBones(int& L, int& R1, int& R2)
 {
+	if (g_dedicated_server)
+	{
+		L = R1 = R2 = BI_NONE;
+		return;
+	}
+
 	IKinematics* V = smart_cast<IKinematics*>(Visual());
+	if (!V)
+	{
+		L = R1 = R2 = BI_NONE;
+		return;
+	}
 	R1 = V->LL_BoneID("bip01_r_hand");
 	R2 = V->LL_BoneID("bip01_r_finger2");
 	L = V->LL_BoneID("bip01_l_finger1");
@@ -286,6 +307,9 @@ void CAI_Trader::net_Destroy()
 
 void CAI_Trader::UpdateCL()
 {
+	if (g_dedicated_server)
+		return;
+
 	inherited::UpdateCL();
 	sound().update(Device.fTimeDelta);
 
@@ -396,10 +420,14 @@ bool CAI_Trader::AllowItemToTrade(CInventoryItem const* item, const SInvItemPlac
 
 void CAI_Trader::dialog_sound_start(LPCSTR phrase)
 {
+	if (g_dedicated_server)
+		return;
 	animation().external_sound_start(phrase);
 }
 
 void CAI_Trader::dialog_sound_stop()
 {
+	if (g_dedicated_server)
+		return;
 	animation().external_sound_stop();
 }

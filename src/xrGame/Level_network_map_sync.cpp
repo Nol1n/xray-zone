@@ -7,14 +7,13 @@
 #include "../xrEngine/xr_ioconsole.h"
 
 static const u32 r_buffer_size = 131072; //128 Kb
-void CLevel::CalculateLevelCrc32()
+static u32 calculate_level_geom_crc32(LPCSTR path_alias, LPCSTR file_name)
 {
 	void* read_buffer = _alloca(r_buffer_size);
-	Msg("* calculating checksum of level.geom");
-	CStreamReader* geom = FS.rs_open("$level$", "level.geom");
+	CStreamReader* geom = FS.rs_open(path_alias, file_name);
 	R_ASSERT2(geom, "failed to open level.geom file");
 	u32 remaind = geom->elapsed();
-	map_data.m_level_geom_crc32 = 0;
+	u32 checksum = 0;
 	while (remaind)
 	{
 		u32 to_read = remaind;
@@ -23,10 +22,26 @@ void CLevel::CalculateLevelCrc32()
 			to_read = r_buffer_size;
 		}
 		geom->r(read_buffer, to_read);
-		map_data.m_level_geom_crc32 ^= crc32(read_buffer, to_read);
+		checksum ^= crc32(read_buffer, to_read);
 		remaind = geom->elapsed();
 	}
 	FS.r_close(geom);
+	return checksum;
+}
+
+void CLevel::CalculateLevelCrc32()
+{
+	Msg("* calculating checksum of level.geom");
+	map_data.m_level_geom_crc32 = calculate_level_geom_crc32("$level$", "level.geom");
+}
+
+void CLevel::CalculateLevelCrc32ForLevel(LPCSTR level_name)
+{
+	R_ASSERT(level_name && level_name[0]);
+	string_path geom_path;
+	xr_sprintf(geom_path, "%s\\level.geom", level_name);
+	Msg("* calculating checksum of %s", geom_path);
+	map_data.m_level_geom_crc32 = calculate_level_geom_crc32("$game_levels$", geom_path);
 }
 
 bool CLevel::IsChecksumsEqual(u32 check_sum) const
@@ -93,11 +108,15 @@ bool CLevel::synchronize_client()
 		P.w_begin(M_CLIENT_REQUEST_CONNECTION_DATA);
 
 		Send(P, net_flags(TRUE, TRUE, TRUE, TRUE));
+		if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+			Msg("* [zone-client-handshake] sent M_CLIENT_REQUEST_CONNECTION_DATA");
 		sended_request_connection_data = TRUE;
 	}
 	//---------------------------------------------------------------------------
 	if (game_configured)
 	{
+		if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+			Msg("* [zone-client-handshake] received server configuration completion");
 		deny_m_spawn = FALSE;
 		return true;
 	}
@@ -118,6 +137,10 @@ void LevelMapSyncData::CheckToSendMapSync()
 {
 	if (!m_sended_map_name_request)
 	{
+		if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+			Msg("* [zone-map-sync] client request map=%s version=%s geom=%08x",
+				m_name.c_str(), m_map_version.c_str(), m_level_geom_crc32);
+
 		NET_Packet P;
 		P.w_begin(M_SV_MAP_NAME);
 		P.w_stringZ(m_name);
@@ -135,6 +158,8 @@ void LevelMapSyncData::ReceiveServerMapSync(NET_Packet& P)
 {
 	m_map_sync_received = true;
 	MapSyncResponse server_resp = static_cast<MapSyncResponse>(P.r_u8());
+	if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+		Msg("* [zone-map-sync] server response=%u", static_cast<u32>(server_resp));
 	if (server_resp == InvalidChecksum)
 	{
 		invalid_geom_checksum = true;

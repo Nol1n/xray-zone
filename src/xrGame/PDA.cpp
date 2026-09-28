@@ -109,6 +109,13 @@ void CPda::OnStateSwitch(u32 S, u32 oldState)
 	if (!ParentIsActor())
 		return;
 
+#ifdef DEDICATED_SERVER
+	// The dedicated simulation keeps the item state, but it has no PDA UI,
+	// player HUD, or first-person animation to update.
+	SetPending(FALSE);
+	return;
+#endif // DEDICATED_SERVER
+
 	switch (S)
 	{
 	case eShowing:
@@ -411,8 +418,10 @@ void CPda::shedule_Update(u32 dt)
 			return;
 		}
 
+#ifndef DEDICATED_SERVER
 		feel_touch_update(Position(), m_fRadius);
 		UpdateActiveContacts();
+#endif // DEDICATED_SERVER
 	}
 }
 
@@ -527,12 +536,18 @@ void CPda::OnMoveToRuck(const SInvItemPlace& prev)
 	if (prev.type == eItemPlaceSlot)
 	{
 		SwitchState(eHidden);
+#ifndef DEDICATED_SERVER
 		if (joystick != BI_NONE)
 			HudItemData()->m_model->LL_GetBoneInstance(joystick).reset_callback();
 		g_player_hud->detach_item(this);
+#endif // DEDICATED_SERVER
 	}
+
+#ifndef DEDICATED_SERVER
 	CUIPdaWnd* pda = &CurrentGameUI()->GetPdaMenu();
 	if (pda->IsShown()) pda->HideDialog();
+#endif // DEDICATED_SERVER
+
 	StopCurrentAnimWithoutCallback();
 	SetPending(FALSE);
 }

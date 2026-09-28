@@ -23,6 +23,7 @@
 #include "HUDManager.h"
 
 ENGINE_API extern float psHUD_FOV_def;
+extern ENGINE_API bool g_dedicated_server;
 int g_nearwall = NW_FOV;
 int g_nearwall_trace = NT_CAM;
 
@@ -204,7 +205,9 @@ void CHudItem::OnStateSwitch(u32 S, u32 oldState)
 		break;
 	}
 
+#ifndef DEDICATED_SERVER
 	g_player_hud->updateMovementLayerState();
+#endif // DEDICATED_SERVER
 
 	::luabind::functor<void> funct;
 	if (ai().script_engine().functor("_G.CHudItem__OnStateSwitch", funct))
@@ -789,6 +792,12 @@ u32 CHudItem::PlayHUDMotion(shared_str M, BOOL bMixIn, CHudItem* W, u32 state, f
 u32 CHudItem::PlayHUDMotion_noCB(const shared_str& motion_name, BOOL bMixIn, float speed, bool bMixIn2)
 {
 	m_current_motion = motion_name;
+	if (g_dedicated_server)
+	{
+		m_started_rnd_anim_idx = 0;
+		m_current_motion_def = nullptr;
+		return 0;
+	}
 
 	if (bDebug && item().m_pInventory)
 	{
@@ -883,6 +892,9 @@ bool CHudItem::TryPlayAnimIdle()
 //AVO: check if animation exists
 bool CHudItem::HudAnimationExist(LPCSTR anim_name)
 {
+	if (g_dedicated_server)
+		return false;
+
 	if (IsAttachedToHUD()) // First person
 	{
 		string256 anim_name_r;

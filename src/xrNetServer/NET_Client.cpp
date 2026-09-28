@@ -21,6 +21,41 @@ static const GUID NET_GUID =
 static const GUID CLSID_NETWORKSIMULATOR_DP8SP_TCPIP =
 	{0x8d3f9e5e, 0xa3bd, 0x475b, {0x9e, 0x49, 0xb0, 0xe7, 0x71, 0x39, 0x14, 0x3c}};
 
+static bool IsIPv4Literal(const char* host)
+{
+	if (!host || !*host)
+		return false;
+
+	u32 octet = 0;
+	u32 octet_length = 0;
+	u32 separator_count = 0;
+	for (const char* current = host; ; ++current)
+	{
+		const unsigned char character = static_cast<unsigned char>(*current);
+		if (character >= '0' && character <= '9')
+		{
+			if (octet_length == 3)
+				return false;
+			octet = octet * 10 + (character - '0');
+			if (octet > 255)
+				return false;
+			++octet_length;
+		}
+		else if (character == '.')
+		{
+			if (!octet_length || separator_count >= 3)
+				return false;
+			++separator_count;
+			octet = 0;
+			octet_length = 0;
+		}
+		else if (character == '\0')
+			return octet_length != 0 && separator_count == 3;
+		else
+			return false;
+	}
+}
+
 const GUID XR_GUID(CLSID_DirectPlay8Client) =
 	{0x743f1dc6, 0x5aba, 0x429f, {0x8b, 0xdf, 0xc5, 0x4d, 0x03, 0x25, 0x3d, 0xc2}};
 
@@ -425,7 +460,10 @@ BOOL IPureClient::Connect(LPCSTR options)
 			xr_strcpy(portstr, strstr(options, "port=") + 5);
 			if (strchr(portstr, '/')) *strchr(portstr, '/') = 0;
 			psSV_Port = atol(portstr);
-			clamp(psSV_Port, int(START_PORT), int(END_PORT));
+			if (psSV_Port <= END_PORT_LAN)
+				clamp(psSV_Port, int(START_PORT_LAN_SV), int(END_PORT_LAN));
+			else
+				clamp(psSV_Port, int(START_PORT), int(END_PORT));
 		};
 
 		BOOL bPortWasSet = FALSE;
@@ -436,7 +474,10 @@ BOOL IPureClient::Connect(LPCSTR options)
 			xr_strcpy(portstr, strstr(options, "portcl=") + 7);
 			if (strchr(portstr, '/')) *strchr(portstr, '/') = 0;
 			psCL_Port = atol(portstr);
-			clamp(psCL_Port, int(START_PORT), int(END_PORT));
+			if (psCL_Port <= END_PORT_LAN)
+				clamp(psCL_Port, int(START_PORT_LAN_CL), int(END_PORT_LAN));
+			else
+				clamp(psCL_Port, int(START_PORT), int(END_PORT));
 			bPortWasSet = TRUE;
 		};
 		//	Msg("* Client connect on port %d\n",psNET_Port);
@@ -530,8 +571,10 @@ BOOL IPureClient::Connect(LPCSTR options)
 
 			R_CHK(NET->SetClientInfo (&Pinfo,0,0,DPNSETCLIENTINFO_SYNC));
 		}
-		if (stricmp(server_name, "localhost") == 0)
+		const bool bDirectConnect = stricmp(server_name, "localhost") == 0 || IsIPv4Literal(server_name);
+		if (bDirectConnect)
 		{
+			Msg("* IPureClient: direct connect to %s:%d", server_name, psSV_Port);
 			WCHAR SessionPasswordUNICODE[4096];
 			if (xr_strlen(password_str))
 			{
@@ -557,16 +600,11 @@ BOOL IPureClient::Connect(LPCSTR options)
 					DPNCONNECT_SYNC); // dwFlags
 				if (res != S_OK)
 				{
-					//			xr_string res = Debug.error2string(HostSuccess);
-
+					Msg("! IPureClient: direct connect to %s:%d failed from local port %u (HRESULT 0x%08X)",
+						server_name, psSV_Port, c_port, static_cast<unsigned int>(res));
 					if (bPortWasSet)
 					{
-						Msg("! IPureClient : port %d is BUSY!", c_port);
 						return FALSE;
-					}
-					else
-					{
-						Msg("! IPureClient : port %d is BUSY!", c_port);
 					}
 
 					c_port++;
@@ -790,6 +828,15 @@ void IPureClient::Disconnect()
 HRESULT IPureClient::net_Handler(u32 dwMessageType, PVOID pMessage)
 {
 	// HRESULT     hr = S_OK;
+	if (strstr(Core.Params, "-zone_server_bootstrap_trace"))
+	{
+		static u32 tracedCallbacks = 0;
+		if (tracedCallbacks < 32)
+		{
+			Msg("* [zone-client-net] DirectPlay callback type=%u", dwMessageType);
+			++tracedCallbacks;
+		}
+	}
 
 	switch (dwMessageType)
 	{
@@ -975,6 +1022,15 @@ void IPureClient::OnMessage(void* data, u32 size)
 	u16 m_type;
 	P->r_begin(m_type);
 	net_Queue.Unlock();
+	if (strstr(Core.Params, "-zone_server_bootstrap_trace"))
+	{
+		static u32 tracedPackets = 0;
+		if (tracedPackets < 32)
+		{
+			Msg("* [zone-client-net] application packet type=%u size=%u", m_type, size);
+			++tracedPackets;
+		}
+	}
 }
 
 void IPureClient::timeServer_Correct(u32 sv_time, u32 cl_time)
