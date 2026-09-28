@@ -124,6 +124,14 @@ CALifeSimulator::CALifeSimulator(xrServer* server, shared_str* command_line) :
 	load(p.m_game_or_spawn, !xr_strcmp(p.m_new_or_load, "load") ? false : true, !xr_strcmp(p.m_new_or_load, "new"));
 	#ifdef DEDICATED_SERVER
 	TraceDedicatedServerBootstrap("ALife simulator level database loaded");
+	string256 xrz_alife_object_count_trace;
+	const CALifeSimulator* xrz_alife_simulator = ai().get_alife();
+	if (xrz_alife_simulator)
+		xr_sprintf(xrz_alife_object_count_trace, sizeof(xrz_alife_object_count_trace), "[XRZ:ALIFE] object_count=%u",
+		            (unsigned)xrz_alife_simulator->objects().objects().size());
+	else
+		xr_sprintf(xrz_alife_object_count_trace, sizeof(xrz_alife_object_count_trace), "[XRZ:ALIFE] object_count=-1");
+	TraceDedicatedServerBootstrap(xrz_alife_object_count_trace);
 	#endif // DEDICATED_SERVER
 }
 
