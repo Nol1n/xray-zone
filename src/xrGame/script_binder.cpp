@@ -148,11 +148,15 @@ BOOL CScriptBinder::net_Spawn(CSE_Abstract* DC)
 		// traders, monsters) must spawn as native presentation objects only.
 		// Their script binder targets the authoritative owner and rejects
 		// remote replicas, so unbind it and skip the script spawn instead of
-		// failing the whole spawn. The local player actor
-		// (M_SPAWN_OBJECT_LOCAL), true offline singleplayer (OnServer()) and
+		// failing the whole spawn. The server ownerless send path
+		// (Perform_connect_spawn -> Spawn_Write(P, TRUE)) sets
+		// M_SPAWN_OBJECT_LOCAL on these replicas, so that bit is not used as a
+		// proxy for the local player actor; the NPC is classified by its CSE
+		// type instead. The local player actor (CSE_ALifeCreatureActor) does
+		// not cast as CSE_ALifeMonsterAbstract or CSE_ALifeTrader, so it keeps
+		// its normal binder path. True offline singleplayer (OnServer()) and
 		// the dedicated server (no binders at all) are left untouched.
-		if (IsGameTypeSingle() && OnClient() && !g_dedicated_server &&
-		    !object->s_flags.is(M_SPAWN_OBJECT_LOCAL))
+		if (IsGameTypeSingle() && OnClient() && !g_dedicated_server)
 		{
 			CSE_ALifeMonsterAbstract* monster = object->cast_monster_abstract();
 			CSE_ALifeTrader* trader = object->cast_trader();
