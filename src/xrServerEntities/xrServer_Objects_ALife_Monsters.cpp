@@ -1153,6 +1153,13 @@ void CSE_ALifeCreatureAbstract::UPDATE_Read(NET_Packet& tNetPacket)
 	tNetPacket.r_u8(s_group);
 };
 
+BOOL CSE_ALifeCreatureAbstract::Net_Relevant()
+{
+	// MakeUpdatePackets already filters unowned, not-ready, and phantom entities.
+	// Online A-Life creatures still need their authoritative snapshots sent.
+	return TRUE;
+}
+
 u8 CSE_ALifeCreatureAbstract::g_team()
 {
 	return s_team;
@@ -2188,6 +2195,14 @@ void CSE_ALifeHumanStalker::STATE_Read(NET_Packet& tNetPacket, u16 size)
 
 void CSE_ALifeHumanStalker::UPDATE_Write(NET_Packet& tNetPacket)
 {
+	static bool logged_network_snapshot = false;
+	if (!logged_network_snapshot)
+	{
+		logged_network_snapshot = true;
+		Msg("* [XRZ:SERVER-STALKER-TX] id=%u name=%s timestamp=%u flags=0x%02X position=(%.2f,%.2f,%.2f)",
+			ID, name(), timestamp, flags, o_Position.x, o_Position.y, o_Position.z);
+	}
+
 	inherited1::UPDATE_Write(tNetPacket);
 	inherited2::UPDATE_Write(tNetPacket);
 	tNetPacket.w_stringZ(m_start_dialog);

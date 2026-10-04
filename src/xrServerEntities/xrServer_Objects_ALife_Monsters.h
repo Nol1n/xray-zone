@@ -221,6 +221,7 @@ public:
 	virtual bool used_ai_locations() const;
 	virtual bool can_switch_online() const;
 	virtual bool can_switch_offline() const;
+	virtual BOOL Net_Relevant();
 	virtual u32 ef_creature_type() const;
 	virtual u32 ef_weapon_type() const;
 	virtual u32 ef_detector_type() const;

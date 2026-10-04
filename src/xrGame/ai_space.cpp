@@ -31,6 +31,8 @@ CAI_Space::CAI_Space()
 {
 	m_ef_storage = 0;
 	m_game_graph = 0;
+	m_client_game_graph_file = 0;
+	m_client_game_graph_chunk = 0;
 	m_graph_engine = 0;
 	m_cover_manager = 0;
 	m_level_graph = 0;
@@ -92,7 +94,51 @@ CAI_Space::~CAI_Space()
 	xr_delete(m_cover_manager);
 	xr_delete(m_graph_engine);
 	xr_delete(m_ef_storage);
+	release_client_game_graph();
 	VERIFY(!m_game_graph);
+}
+
+bool CAI_Space::load_client_game_graph(LPCSTR spawn_name)
+{
+	if (m_game_graph)
+		return true;
+
+	string_path file_name;
+	if (!FS.exist(file_name, "$game_spawn$", spawn_name, ".spawn"))
+		return false;
+
+	m_client_game_graph_file = FS.r_open(file_name);
+	if (!m_client_game_graph_file)
+		return false;
+
+	m_client_game_graph_chunk = m_client_game_graph_file->open_chunk(4);
+	if (!m_client_game_graph_chunk)
+	{
+		FS.r_close(m_client_game_graph_file);
+		m_client_game_graph_file = 0;
+		return false;
+	}
+
+	m_game_graph = xr_new<CGameGraph>(*m_client_game_graph_chunk);
+	return true;
+}
+
+void CAI_Space::release_client_game_graph()
+{
+	if (!m_client_game_graph_file && !m_client_game_graph_chunk)
+		return;
+
+	xr_delete(m_game_graph);
+	if (m_client_game_graph_chunk)
+	{
+		m_client_game_graph_chunk->close();
+		m_client_game_graph_chunk = 0;
+	}
+	if (m_client_game_graph_file)
+	{
+		FS.r_close(m_client_game_graph_file);
+		m_client_game_graph_file = 0;
+	}
 }
 
 void CAI_Space::load(LPCSTR level_name)
@@ -205,6 +251,8 @@ void CAI_Space::patrol_path_storage(IReader& stream)
 void CAI_Space::set_alife(CALifeSimulator* alife_simulator)
 {
 	VERIFY((!m_alife_simulator && alife_simulator) || (m_alife_simulator && !alife_simulator));
+	if (alife_simulator && m_client_game_graph_file)
+		release_client_game_graph();
 	m_alife_simulator = alife_simulator;
 
 	VERIFY(!alife_simulator || !m_game_graph);

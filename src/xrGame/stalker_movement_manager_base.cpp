@@ -225,6 +225,19 @@ void stalker_movement_manager_base::initialize()
 	//	Msg						("[%6d] m_failed_to_build_path = %s (stalker_movement_manager_base::initialize)",Device.dwTimeGlobal,m_failed_to_build_path ? "true" : "false");
 }
 
+void stalker_movement_manager_base::apply_network_presentation_state(
+	EBodyState body_state,
+	EMovementType movement_type,
+	EMentalState mental_state
+)
+{
+	// A remote stalker presents the authoritative server state without running
+	// its local path planner or movement update.
+	m_current.m_body_state = m_target.m_body_state = body_state;
+	m_current.m_movement_type = m_target.m_movement_type = movement_type;
+	m_current.m_mental_state = m_target.m_mental_state = mental_state;
+}
+
 void stalker_movement_manager_base::set_desired_position(const Fvector* position)
 {
 	VERIFY2(!position || accessible(*position) || show_restrictions(&restrictions()), *object().cName());

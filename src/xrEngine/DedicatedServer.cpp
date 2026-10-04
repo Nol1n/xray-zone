@@ -1,15 +1,16 @@
 #include "stdafx.h"
 
-#ifdef DEDICATED_SERVER
 #include "DedicatedServer.h"
 
 namespace
 {
+#ifdef DEDICATED_SERVER
 volatile LONG g_shutdownRequested = 0;
 bool g_controlHandlerRegistered = false;
 HANDLE g_shutdownEvent = NULL;
 char g_shutdownEventName[128] = {};
 char g_startLevel[64] = {};
+#endif
 
 bool isCommandLineBoundary(char value)
 {
@@ -32,6 +33,7 @@ bool hasCommandLineFlag(const char* commandLine, const char* flag)
 	return false;
 }
 
+#ifdef DEDICATED_SERVER
 bool parseStartLevel(const char* commandLine)
 {
 	static const char flag[] = "-zone_server_level=";
@@ -90,8 +92,10 @@ BOOL WINAPI handleConsoleControl(DWORD controlType)
 		return FALSE;
 	}
 }
+#endif
 } // namespace
 
+#ifdef DEDICATED_SERVER
 bool InitializeDedicatedServer(const char* commandLine)
 {
 	if (!AttachConsole(ATTACH_PARENT_PROCESS))
@@ -175,12 +179,18 @@ void RequestDedicatedServerShutdown()
 		SetEvent(g_shutdownEvent);
 }
 
+#endif // DEDICATED_SERVER
+
+bool ServerBootstrapTraceEnabled()
+{
+	return hasCommandLineFlag(Core.Params, "-zone_server_bootstrap_trace");
+}
+
 void TraceDedicatedServerBootstrap(const char* stage)
 {
-	if (!hasCommandLineFlag(Core.Params, "-zone_server_bootstrap_trace"))
+	if (!ServerBootstrapTraceEnabled())
 		return;
 
 	Msg("* [zone-server-trace] %s", stage ? stage : "unknown stage");
 	FlushLog();
 }
-#endif // DEDICATED_SERVER

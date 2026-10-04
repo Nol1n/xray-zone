@@ -1,8 +1,6 @@
 #include "pch_script.h"
 #include "gamepersistent.h"
-#ifdef DEDICATED_SERVER
 #include "../xrEngine/DedicatedServer.h"
-#endif // DEDICATED_SERVER
 #include "../xrEngine/fmesh.h"
 #include "../xrEngine/xr_ioconsole.h"
 #include "../xrEngine/gamemtllib.h"
@@ -742,6 +740,22 @@ extern CUISequencer* g_tutorial2;
 
 void CGamePersistent::OnFrame()
 {
+	const auto traceFrame = [](const char* branch, u32& count)
+	{
+		if (!ServerBootstrapTraceEnabled())
+			return;
+		++count;
+		if (count == 1 || count % 100 == 0)
+		{
+			string256 message;
+			xr_sprintf(message, "[XRZ:GAMEFRAME] branch=%s count=%u level=%u ready=%u paused=%u",
+				branch, count, g_pGameLevel != nullptr,
+				g_pGameLevel ? unsigned(g_pGameLevel->bReady) : 0, unsigned(Device.Paused()));
+			TraceDedicatedServerBootstrap(message);
+		}
+	};
+	static u32 entered = 0, noLevel = 0, notReady = 0, paused = 0, schedulerEnter = 0, schedulerReturn = 0;
+	traceFrame("enter", entered);
 	#ifndef DEDICATED_SERVER
 	if (Device.dwPrecacheFrame == 5 && m_intro_event.empty())
 	{
@@ -778,8 +792,24 @@ void CGamePersistent::OnFrame()
 		m_pMainMenu->DestroyInternal(false);
 	#endif // DEDICATED_SERVER
 
-	if (!g_pGameLevel) return;
-	if (!g_pGameLevel->bReady) return;
+	if (!g_pGameLevel) { traceFrame("no_level", noLevel); return; }
+	if (!g_pGameLevel->bReady)
+	{
+#ifdef DEDICATED_SERVER
+		// A dedicated server has no local client, so it never calls IGame_Level::Load()
+		// and bReady remains false. Once server startup is complete, advance the
+		// shared scheduler without entering client-only level frame work.
+		if (Level().Server && Level().Server->game && g_loading_events.empty() && !Device.Paused())
+		{
+			traceFrame("dedicated_scheduler_enter", schedulerEnter);
+			Engine.Sheduler.Update();
+			traceFrame("dedicated_scheduler_return", schedulerReturn);
+			return;
+		}
+#endif
+		traceFrame("not_ready", notReady);
+		return;
+	}
 
 	// Run the passive CPU/render pose comparison once in explicit profiling sessions.
 	// This avoids relying on platform-specific console-key injection for the diagnostic.
@@ -982,7 +1012,13 @@ void CGamePersistent::OnFrame()
 	__super::OnFrame();
 
 	if (!Device.Paused())
+	{
+		traceFrame("scheduler_enter", schedulerEnter);
 		Engine.Sheduler.Update();
+		traceFrame("scheduler_return", schedulerReturn);
+	}
+	else
+		traceFrame("paused", paused);
 
 	// update weathers ambient
 	if (!Device.Paused())

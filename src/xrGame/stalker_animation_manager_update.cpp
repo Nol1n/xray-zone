@@ -192,7 +192,17 @@ void CStalkerAnimationManager::play_legs()
 {
 	float speed = 0.f;
 	bool first_time = !legs().animation();
-	bool result = legs().animation(assign_legs_animation());
+	const MotionID selected_animation = assign_legs_animation();
+	bool result = legs().animation(selected_animation);
+	static bool logged_remote_legs_selection = false;
+	if (object().Remote() && !logged_remote_legs_selection)
+	{
+		logged_remote_legs_selection = true;
+		Msg("* [XRZ:REMOTE-ANIM-LEGS] id=%u section=%s body=%u movement=%u mental=%u clip_valid=%u target_speed=%.3f",
+			object().ID(), object().cNameSect().c_str(), u32(object().movement().body_state()),
+			u32(object().movement().movement_type()), u32(object().movement().mental_state()),
+			u32(selected_animation.valid()), m_target_speed);
+	}
 
 	if (!first_time && !result && legs().blend())
 	{
@@ -244,6 +254,14 @@ void CStalkerAnimationManager::update_impl()
 
 void CStalkerAnimationManager::update()
 {
+	static bool logged_remote_animation_setup = false;
+	if (object().Remote() && !logged_remote_animation_setup)
+	{
+		logged_remote_animation_setup = true;
+		Msg("* [XRZ:REMOTE-ANIM-SETUP] id=%u section=%s visual=%s skeleton=%u storage=%u alive=%u",
+			object().ID(), object().cNameSect().c_str(), *object().cNameVisual(),
+			u32(m_skeleton_animated != nullptr), u32(m_data_storage != nullptr), u32(object().g_Alive()));
+	}
 	if (!m_skeleton_animated || !m_data_storage)
 		return;
 	START_PROFILE("stalker/client_update/animations")

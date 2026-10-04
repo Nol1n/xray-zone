@@ -427,8 +427,10 @@ void CCustomMonster::net_update::lerp(CCustomMonster::net_update& A, CCustomMons
 	o_model = angle_lerp(A.o_model, B.o_model, f);
 	o_torso.yaw = angle_lerp(A.o_torso.yaw, B.o_torso.yaw, f);
 	o_torso.pitch = angle_lerp(A.o_torso.pitch, B.o_torso.pitch, f);
+	o_torso.roll = angle_lerp(A.o_torso.roll, B.o_torso.roll, f);
 	p_pos.lerp(A.p_pos, B.p_pos, f);
 	fHealth = A.fHealth * (1.f - f) + B.fHealth * f;
+	pose_state = f < 0.5f ? A.pose_state : B.pose_state;
 }
 
 void CCustomMonster::update_sound_player()
@@ -518,16 +520,30 @@ void CCustomMonster::UpdateCL()
 					{
 						NET_Last.p_pos = l_tOldPosition;
 					}
-					else
-					{
-						if (!bfScriptAnimation())
-							SelectAnimation(XFORM().k, movement().detail().direction(), movement().speed());
-					}
 
 					// Signal, that last time we used interpolation
 					NET_WasInterpolating = TRUE;
 					NET_Time = dwTime;
 				}
+			}
+
+			// Remote entities also need their presentation animation while using
+			// the latest snapshot (the normal low-latency path has fewer than two
+			// queued snapshots and therefore extrapolates instead of interpolating).
+			if (!Local() && NET_Last.dwTimeStamp)
+			{
+				const bool script_animation = bfScriptAnimation();
+				static bool logged_remote_animation_path = false;
+				if (!logged_remote_animation_path)
+				{
+					logged_remote_animation_path = true;
+					Msg("* [XRZ:REMOTE-ANIM-PATH] id=%u section=%s queue=%u extrapolation=%u paused=%u script=%u timestamp=%u speed=%.3f move=(%.3f,%.3f,%.3f)",
+						ID(), cNameSect().c_str(), u32(NET.size()), u32(NET.size() < 2), u32(Device.Paused()), u32(script_animation),
+						NET_Last.dwTimeStamp, movement().speed(), movement().detail().direction().x,
+						movement().detail().direction().y, movement().detail().direction().z);
+				}
+				if (!script_animation)
+					SelectAnimation(XFORM().k, movement().detail().direction(), movement().speed());
 			}
 		STOP_PROFILE
 

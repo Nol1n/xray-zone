@@ -886,13 +886,30 @@ void CAI_Stalker::net_Export(NET_Packet& P)
 		R_ASSERT(!NET.empty());
 	}
 	net_update& N = NET.back();
-	//	P.w_float						(inventory().TotalWeight());
-	//	P.w_u32							(m_dwMoney);
 
+	// Keep these fields in sync with net_Import below. The client still reads
+	// inventory weight and money before health and the movement snapshot.
+	P.w_float(inventory().TotalWeight());
+	P.w_u32(get_money());
 	P.w_float(GetfHealth());
 
 	P.w_u32(N.dwTimeStamp);
-	P.w_u8(0);
+	// flags schema v1: [version:2][mental:2][movement:2][body:2]. Version 0
+	// remains the legacy all-zero value and is treated as the client's defaults.
+	const u8 presentation_flags = u8(1u << 6) |
+		u8(u32(movement().body_state()) & 0x3u) |
+		u8((u32(movement().movement_type()) & 0x3u) << 2) |
+		u8((u32(movement().mental_state()) & 0x3u) << 4);
+	static bool logged_remote_pose_export = false;
+	if (!logged_remote_pose_export)
+	{
+		logged_remote_pose_export = true;
+		Msg("* [XRZ:SERVER-POSE-TX] id=%u section=%s timestamp=%u flags=0x%02X body=%u movement=%u mental=%u speed=%.3f pos=(%.2f,%.2f,%.2f) yaw=%.3f",
+			ID(), cNameSect().c_str(), N.dwTimeStamp, presentation_flags,
+			u32(movement().body_state()), u32(movement().movement_type()), u32(movement().mental_state()),
+			movement().speed(), N.p_pos.x, N.p_pos.y, N.p_pos.z, N.o_model);
+	}
+	P.w_u8(presentation_flags);
 	P.w_vec3(N.p_pos);
 	P.w_float /*w_angle8*/(N.o_model);
 	P.w_float /*w_angle8*/(N.o_torso.yaw);
@@ -932,9 +949,9 @@ void CAI_Stalker::net_Import(NET_Packet& P)
 
 	u8 flags;
 
-	P.r_float();
-	set_money(P.r_u32(), false);
-
+	// Server CSE_ALifeHumanStalker::UPDATE_Write starts with the creature
+	// snapshot (health, timestamp, flags, transform, ...). Weight and money
+	// belong to the client-originated export path, not this server snapshot.
 	float health;
 	P.r_float(health);
 	SetfHealth(health);
@@ -942,6 +959,13 @@ void CAI_Stalker::net_Import(NET_Packet& P)
 
 	P.r_u32(N.dwTimeStamp);
 	P.r_u8(flags);
+	N.pose_state = flags;
+	static bool logged_remote_pose_packet = false;
+	if (!logged_remote_pose_packet)
+	{
+		logged_remote_pose_packet = true;
+		Msg("* [XRZ:REMOTE-POSE-RX] id=%u section=%s timestamp=%u flags=0x%02X", ID(), cNameSect().c_str(), N.dwTimeStamp, flags);
+	}
 	P.r_vec3(N.p_pos);
 	P.r_float /*r_angle8*/(N.o_model);
 	P.r_float /*r_angle8*/(N.o_torso.yaw);
@@ -1370,7 +1394,45 @@ void CAI_Stalker::Think()
 void CAI_Stalker::SelectAnimation(const Fvector& view, const Fvector& move, float speed)
 {
 	if (!Device.Paused())
+	{
+		if (Remote())
+		{
+			const u8 state = NET_Last.pose_state;
+			if ((state & 0xC0u) == 0x40u)
+			{
+				const u32 body_value = state & 0x03u;
+				const u32 movement_value = (state >> 2) & 0x03u;
+				const u32 mental_value = (state >> 4) & 0x03u;
+				const MonsterSpace::EBodyState body_state = body_value <= u32(MonsterSpace::eBodyStateStand)
+					? MonsterSpace::EBodyState(body_value) : MonsterSpace::eBodyStateStand;
+				const MonsterSpace::EMovementType movement_type = movement_value <= u32(MonsterSpace::eMovementTypeStand)
+					? MonsterSpace::EMovementType(movement_value) : MonsterSpace::eMovementTypeStand;
+				const MonsterSpace::EMentalState mental_state = mental_value <= u32(MonsterSpace::eMentalStatePanic)
+					? MonsterSpace::EMentalState(mental_value) : MonsterSpace::eMentalStateDanger;
+				movement().apply_network_presentation_state(body_state, movement_type, mental_state);
+			}
+
+			// Remote stalkers do not run the server's movement manager. Reapply
+			// the head/body orientations carried by the latest network snapshot
+			// before selecting presentation animations.
+			MonsterSpace::SBoneRotation head = movement().head_orientation();
+			head.current = NET_Last.o_torso;
+			head.target = NET_Last.o_torso;
+			movement().set_head_orientation(head);
+			movement().m_body.current.yaw = NET_Last.o_model;
+			movement().m_body.target.yaw = NET_Last.o_model;
+			static bool logged_remote_pose_apply = false;
+			if (!logged_remote_pose_apply)
+			{
+				logged_remote_pose_apply = true;
+				Msg("* [XRZ:REMOTE-POSE-APPLY] id=%u section=%s flags=0x%02X body=%u movement=%u mental=%u speed=%.3f move=(%.3f,%.3f,%.3f) model_yaw=%.3f head=(%.3f,%.3f,%.3f) paused=%u",
+					ID(), cNameSect().c_str(), state, u32(movement().body_state()), u32(movement().movement_type()), u32(movement().mental_state()),
+					speed, move.x, move.y, move.z,
+					NET_Last.o_model, NET_Last.o_torso.yaw, NET_Last.o_torso.pitch, NET_Last.o_torso.roll, u32(Device.Paused()));
+			}
+		}
 		animation().update();
+	}
 }
 
 const SRotation CAI_Stalker::Orientation() const

@@ -389,10 +389,10 @@ void CAI_Rat::net_Import(NET_Packet& P)
 	P.r_u32(N.dwTimeStamp);
 	P.r_u8(flags);
 	P.r_vec3(N.p_pos);
-	P.r_angle8(N.o_model);
-	P.r_angle8(N.o_torso.yaw);
-	P.r_angle8(N.o_torso.pitch);
-	P.r_angle8(N.o_torso.roll);
+	P.r_float(N.o_model);
+	P.r_float(N.o_torso.yaw);
+	P.r_float(N.o_torso.pitch);
+	P.r_float(N.o_torso.roll);
 	id_Team = P.r_u8();
 	id_Squad = P.r_u8();
 	id_Group = P.r_u8();

@@ -23,9 +23,7 @@
 #include "profiler.h"
 #include "../xrEngine/zone_profiler.h"
 #include "mt_config.h"
-#ifdef DEDICATED_SERVER
 #include "../xrEngine/DedicatedServer.h"
-#endif // DEDICATED_SERVER
 
 using namespace ALife;
 #ifdef	ENGINE_LUA_ALIFE_UPDAGE_MANAGER_CALLBACKS
@@ -116,7 +114,6 @@ void CALifeUpdateManager::update_scheduled(bool init_ef)
 
 void CALifeUpdateManager::update()
 {
-#ifdef DEDICATED_SERVER
 	static volatile LONG xrz_alife_tick_count = 0;
 	const LONG xrz_alife_ticks = InterlockedIncrement(&xrz_alife_tick_count);
 	if ((xrz_alife_ticks == 1L) || ((xrz_alife_ticks % 100L) == 0L))
@@ -130,7 +127,6 @@ void CALifeUpdateManager::update()
 			(unsigned)objects().objects().size());
 		TraceDedicatedServerBootstrap(xrz_alife_tick_trace);
 	}
-#endif // DEDICATED_SERVER
 	zone_profiler::Scope profileAlifeUpdate(zone_profiler::Zone::ALifeUpdate);
 	update_switch();
 	update_scheduled(false);
@@ -139,7 +135,6 @@ void CALifeUpdateManager::update()
 
 void CALifeUpdateManager::shedule_Update(u32 dt)
 {
-#ifdef DEDICATED_SERVER
 	static volatile LONG xrz_alife_sched_call_count = 0;
 	const LONG xrz_alife_sched_calls = InterlockedIncrement(&xrz_alife_sched_call_count);
 	if ((xrz_alife_sched_calls == 1L) || ((xrz_alife_sched_calls % 100L) == 0L))
@@ -155,13 +150,11 @@ void CALifeUpdateManager::shedule_Update(u32 dt)
 			(unsigned)m_first_time);
 		TraceDedicatedServerBootstrap(xrz_alife_sched_trace);
 	}
-#endif // DEDICATED_SERVER
 
 	ISheduled::shedule_Update(dt);
 
 	if (!initialized())
 	{
-#ifdef DEDICATED_SERVER
 		static volatile LONG xrz_alife_sched_not_init_count = 0;
 		const LONG xrz_alife_sched_not_init = InterlockedIncrement(&xrz_alife_sched_not_init_count);
 		if ((xrz_alife_sched_not_init == 1L) || ((xrz_alife_sched_not_init % 100L) == 0L))
@@ -174,13 +167,11 @@ void CALifeUpdateManager::shedule_Update(u32 dt)
 				(unsigned)xrz_alife_sched_not_init);
 			TraceDedicatedServerBootstrap(xrz_alife_sched_trace);
 		}
-#endif // DEDICATED_SERVER
 		return;
 	}
 
 	if (!m_first_time && g_mt_config.test(mtALife))
 	{
-#ifdef DEDICATED_SERVER
 		static volatile LONG xrz_alife_sched_enqueue_count = 0;
 		const LONG xrz_alife_sched_enqueue = InterlockedIncrement(&xrz_alife_sched_enqueue_count);
 		if ((xrz_alife_sched_enqueue == 1L) || ((xrz_alife_sched_enqueue % 100L) == 0L))
@@ -193,7 +184,6 @@ void CALifeUpdateManager::shedule_Update(u32 dt)
 				(unsigned)xrz_alife_sched_enqueue);
 			TraceDedicatedServerBootstrap(xrz_alife_sched_trace);
 		}
-#endif // DEDICATED_SERVER
 		Device.seqParallel.push_back(
 			fastdelegate::FastDelegate0<>(
 				this,
@@ -203,7 +193,6 @@ void CALifeUpdateManager::shedule_Update(u32 dt)
 		return;
 	}
 
-#ifdef DEDICATED_SERVER
 	{
 		static volatile LONG xrz_alife_sched_inline_count = 0;
 		const LONG xrz_alife_sched_inline = InterlockedIncrement(&xrz_alife_sched_inline_count);
@@ -218,7 +207,6 @@ void CALifeUpdateManager::shedule_Update(u32 dt)
 			TraceDedicatedServerBootstrap(xrz_alife_sched_trace);
 		}
 	}
-#endif // DEDICATED_SERVER
 
 	m_first_time = false;
 

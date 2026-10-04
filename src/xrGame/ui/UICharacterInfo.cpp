@@ -32,6 +32,9 @@ CSE_ALifeTraderAbstract* ch_info_get_from_id(u16 id)
 	}
 	else
 	{
+		if (!Level().Server || !Level().Server->game)
+			return NULL;
+
 		return smart_cast<CSE_ALifeTraderAbstract*>(Level().Server->game->get_entity_from_eid(id));
 	}
 }
@@ -153,6 +156,17 @@ void CUICharacterInfo::InitCharacter(u16 id)
 	m_ownerID = id;
 
 	CSE_ALifeTraderAbstract* T = ch_info_get_from_id(m_ownerID);
+	if (!T)
+	{
+		CInventoryOwner* inventory_owner = smart_cast<CInventoryOwner*>(Level().Objects.net_Find(m_ownerID));
+		if (inventory_owner)
+			InitCharacterMP(inventory_owner->Name(), inventory_owner->IconName());
+		else
+			ClearInfo();
+
+		m_ownerID = u16(-1);
+		return;
+	}
 
 	CCharacterInfo chInfo;
 	chInfo.Init(T);

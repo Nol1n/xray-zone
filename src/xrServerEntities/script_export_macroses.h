@@ -116,6 +116,27 @@
 			ptr->self_type::inherited::v_func_name();									\
 		}
 
+#define DEFINE_LUA_WRAPPER_METHOD_V0_WITH_BASE_GUARD(v_func_name, active_flag)			\
+		virtual void v_func_name()														\
+		{																			\
+			if (active_flag)																\
+			{																		\
+				inherited::v_func_name();														\
+				return;																\
+			}																				\
+			active_flag = true;														\
+			try {																		\
+				call_member<void>(this,#v_func_name);											\
+			}																			\
+			catch(...) {																		\
+			}																				\
+			active_flag = false;														\
+		}																			\
+		static void v_func_name##_static(inherited* ptr)								\
+		{																			\
+			ptr->self_type::inherited::v_func_name();									\
+		}
+
 #define DEFINE_LUA_WRAPPER_METHOD_V1(v_func_name,t1)									\
 		virtual void v_func_name(t1 p1)													\
 		{																				\

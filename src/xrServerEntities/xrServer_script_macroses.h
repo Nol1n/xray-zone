@@ -79,12 +79,10 @@ class CALifeSmartTerrainTask;
 #ifdef XRGAME_EXPORTS
 #define INHERIT_ONLINE_OFFLINE_GROUP \
 	INHERIT_DYNAMIC_ALIFE \
-	DEFINE_LUA_WRAPPER_METHOD_V0		(update) \
 	DEFINE_LUA_WRAPPER_METHOD_0			(get_current_task,CALifeSmartTerrainTask*)
 #else
 #define INHERIT_ONLINE_OFFLINE_GROUP \
-	INHERIT_DYNAMIC_ALIFE \
-	DEFINE_LUA_WRAPPER_METHOD_V0		(update)
+	INHERIT_DYNAMIC_ALIFE
 #endif
 #ifdef XRGAME_EXPORTS
 #	define INHERIT_ZONE \
@@ -185,11 +183,13 @@ struct CWrapperAbstractOnlineOfflineGroup : public T, public ::luabind::wrap_bas
 {
 	typedef T inherited;
 	typedef CWrapperAbstractOnlineOfflineGroup<T> self_type;
+	bool m_update_callback_active;
 
-	CWrapperAbstractOnlineOfflineGroup(LPCSTR section) : inherited(section)
+	CWrapperAbstractOnlineOfflineGroup(LPCSTR section) : inherited(section), m_update_callback_active(false)
 	{
 	}
 
+	DEFINE_LUA_WRAPPER_METHOD_V0_WITH_BASE_GUARD(update, m_update_callback_active);
 	INHERIT_ONLINE_OFFLINE_GROUP;
 };
 

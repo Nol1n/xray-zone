@@ -29,10 +29,17 @@ void xrServer::Process_event(NET_Packet& P, ClientID sender)
 	P.r_u16(destination);
 
 	CSE_Abstract* receiver = game->get_entity_from_eid(destination);
+	const bool trace_zone_event = Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace");
+	if (trace_zone_event)
+		Msg("* [zone-server-event] begin type=%u destination=%u sender=%u receiver=%u",
+			type, destination, sender.value(), receiver ? 1u : 0u);
 	if (receiver)
 	{
 		R_ASSERT(receiver->owner);
 		receiver->OnEvent(P, type, timestamp, sender);
+		if (trace_zone_event)
+			Msg("* [zone-server-event] receiver-dispatched type=%u destination=%u sender=%u",
+				type, destination, sender.value());
 	};
 
 	switch (type)

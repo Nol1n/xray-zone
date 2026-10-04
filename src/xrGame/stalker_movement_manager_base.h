@@ -62,6 +62,7 @@ public:
 	virtual void set_level_dest_vertex(u32 const& level_vertex_id);
 	virtual void remove_links(CObject* object);
 	void initialize();
+	void apply_network_presentation_state(EBodyState body_state, EMovementType movement_type, EMentalState mental_state);
 	IC float path_direction_angle();
 	IC bool turn_in_place() const;
 

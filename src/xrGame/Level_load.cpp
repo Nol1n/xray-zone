@@ -28,9 +28,30 @@ bool CLevel::Load_GameSpecific_Before()
 	g_pGamePersistent->LoadTitle();
 	string_path fn_game;
 
-	if (GamePersistent().GameType() == eGameIDSingle && !ai().get_alife() && FS.exist(fn_game, "$level$", "level.ai") &&
-		!net_Hosts.empty())
-		ai().load(net_SessionName());
+	const bool hasLevelAi = FS.exist(fn_game, "$level$", "level.ai");
+	const bool hasNetworkHost = !net_Hosts.empty();
+	const bool needsNetworkAiSpace = !ai().get_alife() && hasLevelAi && hasNetworkHost;
+	// The dedicated bootstrap currently serves the stock Anomaly "all" spawn.
+	// A network client has no local ALife simulator to supply its game graph.
+	const bool gameGraphReady = !needsNetworkAiSpace || ai().load_client_game_graph("all");
+	const bool needsAiSpace = needsNetworkAiSpace && gameGraphReady;
+	if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+		Msg("* [zone-client-ai] game_type=%u alife=%u level_ai=%u hosts=%u game_graph=%u load=%u map=%s session=%s",
+			unsigned(GamePersistent().GameType()), unsigned(ai().get_alife() != nullptr),
+			unsigned(hasLevelAi), unsigned(hasNetworkHost), unsigned(gameGraphReady), unsigned(needsAiSpace),
+			*name(), hasNetworkHost ? net_SessionName() : "");
+	if (needsNetworkAiSpace && !gameGraphReady)
+	{
+		Msg("! [zone-client-ai] could not load $game_spawn$\\all.spawn graph");
+		return (FALSE);
+	}
+	if (needsAiSpace)
+	{
+		shared_str levelName = name();
+		ai().load(*levelName);
+		if (Core.Params && strstr(Core.Params, "-zone_server_bootstrap_trace"))
+			Msg("* [zone-client-ai] level AI space loaded");
+	}
 
 	if (!g_dedicated_server && !ai().get_alife() && ai().get_game_graph() && FS.exist(fn_game, "$level$", "level.game"))
 	{

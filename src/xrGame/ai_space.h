@@ -18,6 +18,7 @@ class CCoverManager;
 class CScriptEngine;
 class CPatrolPathStorage;
 class moving_objects;
+class IReader;
 
 namespace doors
 {
@@ -35,6 +36,8 @@ private:
 
 private:
 	CGameGraph* m_game_graph;
+	IReader* m_client_game_graph_file;
+	IReader* m_client_game_graph_chunk;
 	CLevelGraph* m_level_graph;
 	CGraphEngine* m_graph_engine;
 	CEF_Storage* m_ef_storage;
@@ -46,6 +49,8 @@ private:
 	doors::manager* m_doors_manager;
 
 private:
+	bool load_client_game_graph(LPCSTR spawn_name);
+	void release_client_game_graph();
 	void load(LPCSTR level_name);
 	void unload(bool reload = false);
 	void patrol_path_storage_raw(IReader& stream);
